@@ -93,6 +93,7 @@ class LayPin():
 class LayNet():
     def __init__(self, name:str) -> None:
         self.name = name
+        self.pins = []
         self.connections:dict[str,CustomInstance] = {}
 
     def bound(self, pin:str, inst:CustomInstance):
@@ -104,11 +105,11 @@ class CustomInstance():
         self.trans = instance.trans
         self.kdb_inst = instance
         self.name = f"{self.kdb_cell.name} ({self.kdb_inst.to_s()})"
-        self.ref_pins = self.transform(ref_cell.pins)
+        self.ref_pins = self.replace(ref_cell.pins)
         self.is_pinned = False
         self.terminals:dict[str, LayPin | LayNet] = {}
 
-    def transform(self, pins:Dict[str,LayPin]) -> Dict[str,LayPin]:
+    def replace(self, pins:Dict[str,LayPin]) -> Dict[str,LayPin]:
         res = {}
         for pin_name, pin_obj in pins.items():
             transformed_pin = pin_obj.from_trans(self.trans)
@@ -119,7 +120,6 @@ class CustomInstance():
         for pin_ref, inst_ref in net.connections.items():
                 self.pin_to(inst_ref, terminal, pin_ref)
                 self.terminals[pin_ref] = net
-
 
     def pin_to(self, inst:CustomInstance, p1:str, p2:str):
         pin1 = self.ref_pins.get(p1)
@@ -138,9 +138,8 @@ class CustomInstance():
         else:
             displacement = pin2.distance(pin1)
             self.kdb_inst.transform(kdb.Trans(displacement))
-            for p in self.ref_pins.values():
-                p.displace(displacement)
             self.trans = self.kdb_inst.trans
+            self.ref_pins = self.replace(self.ref_pins)
             self.is_pinned = True
 
 class CustomLayoutCell():
