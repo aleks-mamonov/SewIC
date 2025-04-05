@@ -1,1 +1,1 @@
-from klayout_plugin.subcells.build_gds import TestCell
+from klayout_plugin.examples.build_gds import TestCell

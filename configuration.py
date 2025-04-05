@@ -9,9 +9,15 @@ LEAFCELL_PATH = "/home/aleksandr/.klayout/python/klayout_plugin/leafcells"
 # Layout Configurations
 layconf.LEAFCELL_PATH = Path(LEAFCELL_PATH).glob("**/*.gds")
 
-layconf.PIN_LAY = [
-    ( (68, 16), (68, 5) ) # Metal
-]
+layconf.register_tech("/home/aleksandr/.klayout/salt/sky130A_el/sky130A.lyt")
+layconf.TECH_NAME = "sky130A_el"
+layconf.PIN_SETUPS([
+    ( (68, 16), (68, 5) ) # Metal1
+])
+
+# layconf.PIN_SETUPS([
+#     ( "met1.pin", "met1.label") # Metal1
+# ])
 
 # Schematic Configurations
 schconf.LEAFCELL_PATH = Path(LEAFCELL_PATH).glob("**/*.cir")

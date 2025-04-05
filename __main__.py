@@ -1,2 +1,2 @@
-from klayout_plugin.subcells.build_gds import main
+from klayout_plugin.examples.build_gds import main
 main()

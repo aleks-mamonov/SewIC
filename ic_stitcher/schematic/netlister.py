@@ -141,7 +141,7 @@ class CustomNetlist():
     
     def insert(self, inst_name:str, cell_name:str, **connection:Dict[str:str]):
         """
-        Insert an instance by cell name and by pinns, retriving a reference cell from loaded cells 
+        Insert an instance by cell name and by pins, retriving a reference cell from loaded cells 
         or reading it from leafcells
         """
         ref_cell = self.add(cell_name)

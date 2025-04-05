@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 
 from ..configurations import GlobalLayoutConfigs as config
+from ..configurations.layout_global_configs import Layer
 import klayout.db as kdb
 
 LOGGER = logging.getLogger(__name__)
@@ -39,41 +40,48 @@ def _load_leafcell(call_name:str) -> kdb.Layout:
     if(path is None):
         LOGGER.error(f"'{call_name}' not found in {config.LEAFCELL_PATH}")
     layout = kdb.Layout(False)
+    layout.technology_name = config.TECH_NAME
     layout.read(path)
     return layout
 
-class Layer():
-    def __init__(self, layer:int, datatype:int) -> None:
-        self.info = kdb.LayerInfo(layer, datatype)
-        pass
 
 class LayPinInfo():
     def __init__(self, pin_layer:Layer, lbl_layer:Layer) -> None:
         self.box_data = pin_layer
         self.lbl_data = lbl_layer
-
-LAY_PIN_INFOS:List[LayPinInfo] = [
-    LayPinInfo(Layer(ps[0][0],ps[0][1]), 
-               Layer(ps[1][0],ps[1][1])) for ps in config.PIN_LAY]
+    
+    def __str__(self):
+        return f"({self.box_data}) ({self.lbl_data})"
+    
+    def __repr__(self):
+        return str(self)
 
 class LayPin():
-    def __init__(self, text:kdb.Text, box:kdb.Box, info:LayPinInfo) -> None:
-        self.box = box
-        self.text = text
-        self.lable = text.string
-        self.info = info
-        self.is_pinned = False
+    def __init__(self, box:kdb.Box, 
+                 box_layer:Layer,
+                 label: kdb.Text,
+                 label_layer:Layer,
+                 adjust_label = False) -> None:
+        self.box:kdb.Box = box
+        self.name = label.string
+        label_trans = label.trans
+        if(adjust_label):
+            label_trans = kdb.Trans(x=self.box.center().x, y=self.box.center().y)
+            label.trans = label_trans
+        self.text = label
+        
+        self.label_layer = label_layer
+        self.box_layer = box_layer
 
     def __eq__(self, value: object) -> bool:
-        return self.lable == value.lable
+        return self.name == value.name
     
     def __hash__(self):
-        return hash((self.lable, self.box, self.info))
+        return hash((self.name, self.box, self.info))
     
     def from_trans(self, trans:kdb.Trans):
-        return LayPin(self.text.transformed(trans),
-                      self.box.transformed(trans),
-                      self.info)
+        return LayPin(self.box.transformed(trans), self.box_layer,
+                       self.text.transformed(trans), self.label_layer)
     
     def distance(self, pin:LayPin) -> kdb.Vector:
         p1 = self.box.p1
@@ -82,65 +90,108 @@ class LayPin():
     
     def displace(self, vector:kdb.Vector):
         self.box.move(vector)
+        self.text.move(vector)
 
     def match(self, pin:LayPin) -> bool:
         xor = kdb.Region(self.box) ^ kdb.Region(pin.box)
         return xor.is_empty()
     
     def __str__(self):
-        return f"{self.lable} ({self.box.to_s()})"
+        return f"{self.name} ({self.box.to_s()})"
     
-class LayNet():
-    def __init__(self, name:str) -> None:
-        self.name = name
-        self.pins = []
-        self.connections:dict[str,CustomInstance] = {}
+    def __repr__(self):
+        return "PIN: " + str(self)
+    
 
-    def bound(self, pin:str, inst:CustomInstance):
-        self.connections[pin] = inst
+class LayNet():
+    def __init__(self, name:str, is_pinned = False) -> None:
+        self.name = name
+        self.is_pinned = is_pinned
+        self.top_pin:LayPin = None
+        self.ref_pin:LayPin = None
+
+    def readjust_pin(self):
+        if(not self.top_pin):
+            return None
+        if(not self.ref_pin):
+            return None
+        self.top_pin.displace(self.ref_pin.distance(self.top_pin))
+
+    def __str__(self):
+        return self.name
+    
+    def __repr__(self):
+        return f"NET: {self} [{self.top_pin} {self.ref_pin}]"
+
 
 class CustomInstance():
-    def __init__(self, name:str, instance:kdb.Instance, ref_cell: CustomLayoutCell) -> None:
-        self.kdb_cell = instance.cell
-        self.trans = instance.trans
-        self.kdb_inst = instance
-        self.name = f"{self.kdb_cell.name} ({self.kdb_inst.to_s()})"
-        self.ref_pins = self.replace(ref_cell.pins)
+    def __init__(self, name:str, 
+                 ref_cell: CustomLayoutCell,
+                 parent: CustomLayoutCell,
+                 kdb_inst:kdb.Instance) -> None:
+        self.ref_cell = ref_cell
+        self.parent = parent
+        self.kdb_inst = kdb_inst
+        self.trans = kdb_inst.trans
+        self.movement = kdb.Vector()
+        self.name = f"{name} ({self.kdb_inst.to_s()})"
+        self.ref_pins = ref_cell.pins
+        
+        self.terminals = self.get_terminals(ref_cell.pins)
         self.is_pinned = False
-        self.terminals:dict[str, LayPin | LayNet] = {}
+        self.label:kdb.Shape = None
 
-    def replace(self, pins:Dict[str,LayPin]) -> Dict[str,LayPin]:
+    def add_label(self):
+        if self.label:
+            self.label.delete()
+        # Adding top-level label
+        lbl_layer = Layer(0, 99)
+        lbl_text = kdb.Text(self.name, self._center())
+        lbl_shapes = self.parent.kdb_cell.shapes(lbl_layer.info)
+        self.label = lbl_shapes.insert(lbl_text)
+
+    def get_terminals(self, pins:Dict[str,LayPin]) -> Dict[str,LayPin]:
         res = {}
         for pin_name, pin_obj in pins.items():
             transformed_pin = pin_obj.from_trans(self.trans)
             res[pin_name] = transformed_pin
         return res
     
-    def connect_to_net(self, terminal:str, net:LayNet):
-        for pin_ref, inst_ref in net.connections.items():
-                self.pin_to(inst_ref, terminal, pin_ref)
-                self.terminals[pin_ref] = net
+    def _center(self) -> kdb.Trans:
+        boundary = self.kdb_inst.bbox()
+        center = boundary.center()
+        return kdb.Trans(x=center.x, y=center.y)
 
-    def pin_to(self, inst:CustomInstance, p1:str, p2:str):
-        pin1 = self.ref_pins.get(p1)
-        if(pin1 is None):
-            LOGGER.error(f"No PIN {p1} found in {self.name}")
-            raise CompilerLayoutError()
-        pin2 = inst.ref_pins.get(p2)
-        if(pin2 is None):
-            LOGGER.error(f"No PIN {p2} in {inst.name}")
-            raise CompilerLayoutError()
-        
-        if(self.is_pinned):
-            if(not pin1.match(pin2)):
-                LOGGER.error(f"unmatched pins in {self.name} {pin1} <> {pin2}")
-                #raise CompilerLayoutError()
-        else:
-            displacement = pin2.distance(pin1)
+    def connect(self, connections:dict[str,LayNet]):
+        if(len(connections) != len(self.terminals)):
+            raise CompilerLayoutError(f"Invalid size of connections {len(connections)}")
+        for pin_name, terminal in self.terminals.items():
+            net = connections[pin_name]
+            terminal.displace(self.trans.disp)
+            if(not net.ref_pin):
+                net.ref_pin = terminal
+            else: 
+                self.pin_to(terminal, net.ref_pin)
+            self.terminals[pin_name] = terminal
+        for net in connections.values():
+            net.readjust_pin()
+            
+    def pin_to(self, pin1: LayPin, pin2:LayPin):
+        displacement = pin2.distance(pin1) # From pin2 (destination) to pin1 (source)
+        if(not self.is_pinned):
             self.kdb_inst.transform(kdb.Trans(displacement))
             self.trans = self.kdb_inst.trans
-            self.ref_pins = self.replace(self.ref_pins)
+            # for term in self.terminals.values():
+            #     term.displace(displacement)
+            self.add_label()
             self.is_pinned = True
+        pin1.displace(displacement)
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return f"INST: {self} [{self.terminals}]"
 
 class CustomLayoutCell():
     def __init__(self, name) -> None:
@@ -191,37 +242,39 @@ class CustomLayoutCell():
             cell_reference:kdb.Cell = inst.cell
             cell_name = cell_reference.name
             ref_cell = self.cells[cell_name]
-            instance = CustomInstance(inst.to_s(), inst, ref_cell)
+            instance = CustomInstance(ref_cell.name, ref_cell, self, inst)
             res[instance.name] = instance 
         return res
     
-    def _find_lable(self, layer:int, box: kdb.Box) -> kdb.Shape:
+    def _find_label(self, layer:int, box: kdb.Box) -> kdb.Shape:
         """
-        Find a lable of a layer within a box, it's used to find pins
+        Find a label of a layer within a box, it's used to find pins
         """
         reciter = kdb.RecursiveShapeIterator(self.layout, self.kdb_cell, layer, box)
         res = [s.shape() for s in reciter.each()]
         if(len(res) == 0):
-            LOGGER.error(f"No lables on the pin {box.to_s}")
+            LOGGER.error(f"No labels on the pin {box.to_s}")
             raise CompilerLayoutError()
         elif(len(res) > 1):
-            LOGGER.error(f"More then 1 lable on the pin {box.to_s}")
+            LOGGER.error(f"More then 1 label on the pin {box.to_s}")
             raise CompilerLayoutError()
         return res[0]
     
     def _get_pins(self) -> Dict[str,LayPin]:
         """
-        Collect all labled pins in the cell
+        Collect all labeld pins in the cell
         """
         pins = {}
-        for lay_info in LAY_PIN_INFOS:
-            pin_layer = self.layout.find_layer(lay_info.box_data.info)
-            lbl_layer = self.layout.find_layer(lay_info.lbl_data.info)
-            for pin in self.kdb_cell.each_shape(pin_layer):
-                sbox = pin.box
-                lable_shape = self._find_lable(lbl_layer, sbox)
-                text:kdb.Text = lable_shape.text
-                pins[text.string] = LayPin(text, sbox, lay_info)
+        for lay_info in config._PIN_LAY:
+            box_layer = self.layout.find_layer(lay_info[0].info)
+            lbl_layer = self.layout.find_layer(lay_info[1].info)
+            for box_shape in self.kdb_cell.each_shape(box_layer):
+                if(not isinstance(box_shape.box, kdb.Box)):
+                    continue
+                label_shape = self._find_label(lbl_layer, box_shape.box)
+                pin = LayPin(box_shape.box, lay_info[0],
+                             label_shape.text, lay_info[1])
+                pins[pin.name] = pin 
         return pins
     
     def _add_cell(self, cell:CustomLayoutCell):
@@ -248,52 +301,43 @@ class CustomLayoutCell():
         ref_cell = self._add_cell(cell)
         cell_inst_arr = kdb.CellInstArray(ref_cell.kdb_cell, trans)
         cell_inst = self.kdb_cell.insert(cell_inst_arr)
-        custom_inst = CustomInstance(inst_name, cell_inst, cell)
+        custom_inst = CustomInstance(inst_name, cell, self, cell_inst)
+        custom_inst.add_label()
         self.instances[inst_name] = custom_inst
         return custom_inst
-    
-    def connect_to_net(self, instance: CustomInstance, terminal:str, net_name: str):
-        lnet:LayNet = self.nets.get(net_name)
-        if(lnet is None):
-            lnet = LayNet(net_name)
-            lnet.bound(terminal,instance)
-            self.nets[net_name] = lnet
-        else:
-            for pin_ref, inst_ref in lnet.connections.items():
-                instance.pin_to(inst_ref, terminal, pin_ref)
 
-    def connect_to_pin(self, instance: CustomInstance, terminal:str, pin_name: str):
-        if(pin_name in self.pins):
-            raise CompilerLayoutError(f"Pin {pin_name} is already regestered")
-        inst_pin = instance.ref_pins[terminal]
+    def add_pin(self, inst_pin: LayPin, pin_name):
         pin_box = inst_pin.box
         pin_text = inst_pin.text
-        box_layer = inst_pin.info.box_data.info
-        lbl_layer = inst_pin.info.lbl_data.info
+        box_layer = inst_pin.box_layer.info
+        lbl_layer = inst_pin.label_layer.info
         new_lbl_text = kdb.Text(pin_name, pin_text.trans)
         box_shapes = self.kdb_cell.shapes(box_layer)
         lbl_shapes = self.kdb_cell.shapes(lbl_layer)
-        box_shapes.insert(pin_box)
-        lbl_shapes.insert(new_lbl_text)
-        self.pins[pin_name] = LayPin(new_lbl_text, pin_box, inst_pin.info)
+        new_box_shape = box_shapes.insert(pin_box)
+        new_label_shape = lbl_shapes.insert(new_lbl_text)
+        lpin = LayPin(new_box_shape.box, inst_pin.box_layer, 
+                      new_label_shape.text, inst_pin.label_layer, adjust_label=True)
+        lnet = self.add_net(pin_name)
+        if(lnet.top_pin):
+            raise CompilerLayoutError(f"Pin {lpin} is already regestered for net {lnet}")
+        lnet.top_pin = lpin
+        self.pins[pin_name] = lpin
+        return lpin
     
+    def add_net(self, net_name, pin:LayPin = None):
+        if(net_name in self.nets):
+            return self.nets[net_name]
+        lnet = LayNet(net_name)
+        self.nets[net_name] = lnet
+        return lnet
+    
+    def __str__(self):
+        return self.name
 
-    def attach_pin(self, net_name: str):
-        net = self.nets[net_name]
-        connections = net.connections.items()
-        for pin_name, inst in connections:
-            pin = inst.ref_pins[pin_name]
-            pin_box = pin.box
-            pin_text = pin.text
-            box_layer = pin.info.box_data.info
-            lbl_layer = pin.info.lbl_data.info
-            new_lbl_text = kdb.Text(net_name, pin_text.trans)
-            box_shapes = self.kdb_cell.shapes(box_layer)
-            lbl_shapes = self.kdb_cell.shapes(lbl_layer)
-            box_shapes.insert(pin_box)
-            lbl_shapes.insert(new_lbl_text)
-            net.bound(net_name, LayPin(new_lbl_text, pin_box, pin.info))
-
+    def __repr__(self):
+        return f"CELL: {self} [{self.pins}]"
+    
 class LayLeafCell(CustomLayoutCell):
     def __init__(self, name):
         super().__init__(name)
