@@ -16,17 +16,30 @@ class Pin():
 class Net():
     name:str
         
-class _Pin():
-    def __init__(self, pin:Pin):
-        self.name = pin.name
-        self._lay = None
-        self._sch = None
+class _CellPin():
+    def __init__(self, name:str):
+        self.name:str = name
+        self._lay:PlacedPin = None
+        #self._sch_name:str = name
+        # if(pin.name.find("#") != -1):
+        #     self._sch_name = pin.name.split("#")[0]
 
-class _Net():
-    def __init__(self, net:Net):
-        self.name = net.name
-        self._lay = None
-        self._sch = None
+class _CellNet():
+    def __init__(self, name:str):
+        self.name:str = name
+        self.lnet:LayNet = None
+        self.pin:_CellPin = None
+        #self._sch_name:str = net.name
+        # if(pin.name.find("#") != -1):
+        #     self._sch_name = net.name.split("#")[0]
+        #self._sch:str = None
+    
+    def add_lay(self, net:LayNet):
+        self.lnet = net
+        if net.top_pin:
+            lpin = net.top_pin
+            self.pin = _CellPin(self.name)
+            self.pin._lay = lpin
 
 class IPlantError(BaseException): ...
 
@@ -62,29 +75,51 @@ class CustomCell():
         self._connect_lay_inst(instance_name, item)
         self.items[instance_name] = item
 
+    def find_pin(self, name:str):
+        if(not isinstance(name, str)):
+            raise IPlantError("Incorrect type of the name, must be 'str'")
+        pin = Pin(name)
+        return pin
+    
+    def find_net(self, name:str):
+        if(not isinstance(name, str)):
+            raise IPlantError("Incorrect type of the name, must be 'str'")
+        net = Net(name, pin=True)
+        return net
+    
+    def get_net(self, name:str):
+        if name in self.nets:
+            return self.nets[name]
+        net = _CellNet(name)
+        self.nets[name] = net
+        return net
+    
+    def add_pin(self, net:_CellNet):
+        name = net.name
+        if name in self.pins:
+            raise IPlantError(f"Pin '{name}' is already existed")
+        pin = self.layout.add_pin(net.lnet)
+        net.pin = pin
+        self.pins[name] = pin
+        return pin
+
     def _connect_lay_inst(self, name:str, item:Item):
         lay_instance = self.layout.insert(item.cell.layout, name, item.trans)
         lay_connect:dict[str,LayNet] = {}
         for term, conn in item.connections.items():
-            if(isinstance(conn, Pin)):
-                inst_pin = lay_instance.terminals[term]
-                lay_pin = self.layout.add_pin(inst_pin, conn.name)
-                cell_pin = _Pin(conn)
-                cell_pin._lay = lay_pin
-                self.pins[lay_pin.name] = lay_pin
-                lay_net = self.layout.nets[conn.name]
-                froz_net = Net(lay_net.name)
-                cell_net = _Net(froz_net)
-                cell_net._lay = lay_net
-                self.nets[lay_net.name] = cell_net
-                lay_connect[term] = lay_net
+            name = conn
+            if(isinstance(conn, Pin) or isinstance(conn, Net)):
+                name = conn.name
             else:
-                lay_net = self.layout.add_net(conn)
-                froz_net = Net(lay_net.name)
-                cell_net = _Net(froz_net)
-                cell_net._lay = lay_net
-                self.nets[lay_net.name] = cell_net
-                lay_connect[term] = lay_net
+                msg = f"Unexpected type of the contact must be Pin or str, given {type(conn)}"
+                raise IPlantError(msg)
+            cell_net = self.get_net(name)
+            ref_pin = lay_instance.terminals[term]
+            lnet = self.layout.add_net(conn.name, ref_pin)
+            if(isinstance(conn, Pin)):
+                lpin = self.layout.add_pin(lnet)
+            cell_net.add_lay(lnet)
+            lay_connect[term] = lnet
         lay_instance.connect(lay_connect)
         item.lay_instance = lay_instance
 
@@ -93,12 +128,7 @@ class CustomCell():
     
     def claim(self, path:str):
         self.layout.layout.write(path)
-    
-    def get_pin(self, pin_name:str): # ??
-        pass
 
-    def create_net(self, net_name:str): # ??
-        pass
 
 class LeafCell(CustomCell):
     _loaded:dict[str, LeafCell] = {}
