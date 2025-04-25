@@ -66,8 +66,8 @@ class CustomCell():
         self.layout = CustomLayoutCell(cell_name)
         self.schema = CustomNetlistCell(cell_name)
         self._logger = logging.getLogger(cell_name)
-        self._logger.setLevel(logging.DEBUG)
         addStreamHandler(self._logger)
+        self._logger.setLevel(logging.DEBUG)
         self._logger.info(f"Cell: {cell_name}")
         #self.schematic = netlist.CustomNetlist(cell_name)
         #self.declare(*pars, **kwpars)
@@ -119,7 +119,7 @@ class CustomCell():
         #return pin
 
     def _connect_inst(self, name:str, item:Item):
-        self._logger.debug(str(item))
+        self._logger.info(f"X{name} {item}")
         lay_instance = self.layout.insert(item.cell.layout, name, item.trans)
         lay_connect:dict[str,LayNet] = {}
         sch_instance = self.schema.insert(name, item.cell.schema)

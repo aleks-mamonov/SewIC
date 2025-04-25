@@ -188,7 +188,7 @@ class CustomNetlistCell(KDBNetlistCell):
             for ref_cell in cell.ref_cells.values():
                 self.ref_cells[ref_cell.name] = self.add(ref_cell)
         else:
-            LOGGER.warning(f"[{self.name}] inserting an existing cell '{cellname}'")
+            LOGGER.debug(f"[{self.name}] inserting an existing cell '{cellname}'")
         return new_cell
     
     def insert(self, inst_name:str, cell:CustomNetlistCell|LeafNetlistCell) -> CustomNetlistInstance:
