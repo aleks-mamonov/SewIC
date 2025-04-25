@@ -1,8 +1,8 @@
 from __future__ import annotations
 import os
 from pathlib import Path
-import klayout_plugin.configuration
-import klayout_plugin.ic_stitcher.custom_cell as ip
+from ..configuration import *
+import ic_stitcher.custom_cell as ip
 
 class TestCell(ip.CustomCell):
     def __init__(self, cell_name, p = 0):

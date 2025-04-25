@@ -1,11 +1,10 @@
 from __future__ import annotations
-import klayout.db as pya_db
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, ClassVar
-import functools
+import logging
 
-from .layout import * 
+from .layout.floorplaner import * 
+from .schematic.netlister import * 
+from .utils.Logging import addStreamHandler
 #import klayout_plugin.ip_builder.schematic.netlister as netlist
 
 @dataclass(frozen=True)
@@ -20,6 +19,7 @@ class _CellPin():
     def __init__(self, name:str):
         self.name:str = name
         self._lay:PlacedPin = None
+        self._sch:NetlistPin = None
         #self._sch_name:str = name
         # if(pin.name.find("#") != -1):
         #     self._sch_name = pin.name.split("#")[0]
@@ -29,6 +29,7 @@ class _CellNet():
         self.name:str = name
         self.lnet:LayNet = None
         self.pin:_CellPin = None
+        self.snet:NetlistPin = None
         #self._sch_name:str = net.name
         # if(pin.name.find("#") != -1):
         #     self._sch_name = net.name.split("#")[0]
@@ -36,16 +37,15 @@ class _CellNet():
     
     def add_lay(self, net:LayNet):
         self.lnet = net
-        if net.top_pin:
-            lpin = net.top_pin
-            self.pin = _CellPin(self.name)
-            self.pin._lay = lpin
+            
+    def add_sch(self, net:NetlistNet):
+        self.lnet = net
 
 class IPlantError(BaseException): ...
 
 class Item():
     def __init__(self, subcell:CustomCell | LeafCell,
-                 Connections:dict[str,str|Pin],
+                 Connections:dict[str,str|Pin|Net],
                  trans = R0) -> None:
         if(not isinstance(subcell, CustomCell)):
             raise IPlantError(f"Error: no other types is supported, except Cell and str for an Item")
@@ -56,23 +56,31 @@ class Item():
         self.connections = Connections
         self.lay_instance = None
         self.sch_instance = None
+    
+    def __str__(self):
+        return f"ITEM: {self.cell_name} ({self.connections})"
 
 class CustomCell():
     def __init__(self, cell_name:str) -> None:
         self.name = cell_name
-        self.items = {}
         self.layout = CustomLayoutCell(cell_name)
-        self.pins = {}
-        self.nets = {}
+        self.schema = CustomNetlistCell(cell_name)
+        self._logger = logging.getLogger(cell_name)
+        self._logger.setLevel(logging.DEBUG)
+        addStreamHandler(self._logger)
+        self._logger.info(f"Cell: {cell_name}")
         #self.schematic = netlist.CustomNetlist(cell_name)
         #self.declare(*pars, **kwpars)
+        self.items = {}
+        self.pins = {}
+        self.nets = {}
     
     def __setitem__(self, instance_name:str, item:Item):
         if(type(item) is not Item):
             raise IPlantError("Item must be an object of Item class")
         if(instance_name in self.items.keys()):
             raise IPlantError(f"Item {instance_name} must have an unique name")
-        self._connect_lay_inst(instance_name, item)
+        self._connect_inst(instance_name, item)
         self.items[instance_name] = item
 
     def find_pin(self, name:str):
@@ -87,48 +95,67 @@ class CustomCell():
         net = Net(name, pin=True)
         return net
     
-    def get_net(self, name:str):
+    def get_net(self, name:str) -> _CellNet:
         if name in self.nets:
             return self.nets[name]
+        return None
+    
+    def create_net(self, name:str):
+        if name in self.nets:
+            raise IPlantError(f"Net '{name}' is already existed")
         net = _CellNet(name)
         self.nets[name] = net
         return net
-    
+        
     def add_pin(self, net:_CellNet):
         name = net.name
         if name in self.pins:
             raise IPlantError(f"Pin '{name}' is already existed")
-        pin = self.layout.add_pin(net.lnet)
+        pin = _CellPin(name)
+        pin._lay = self.layout.add_pin(net.lnet)
+        pin._sch = self.schema.add_pin(net.snet)
         net.pin = pin
         self.pins[name] = pin
-        return pin
+        #return pin
 
-    def _connect_lay_inst(self, name:str, item:Item):
+    def _connect_inst(self, name:str, item:Item):
+        self._logger.debug(str(item))
         lay_instance = self.layout.insert(item.cell.layout, name, item.trans)
         lay_connect:dict[str,LayNet] = {}
+        sch_instance = self.schema.insert(name, item.cell.schema)
+        sch_connect:dict[str,NetlistPin] = {}
         for term, conn in item.connections.items():
-            name = conn
+            net_name = None
             if(isinstance(conn, Pin) or isinstance(conn, Net)):
-                name = conn.name
+                net_name = conn.name
+            elif isinstance(conn, str):
+                net_name = conn
             else:
                 msg = f"Unexpected type of the contact must be Pin or str, given {type(conn)}"
                 raise IPlantError(msg)
-            cell_net = self.get_net(name)
-            ref_pin = lay_instance.terminals[term]
-            lnet = self.layout.add_net(conn.name, ref_pin)
-            if(isinstance(conn, Pin)):
-                lpin = self.layout.add_pin(lnet)
-            cell_net.add_lay(lnet)
-            lay_connect[term] = lnet
+            cell_net = self.get_net(net_name)
+            if cell_net is None:
+                cell_net = self.create_net(net_name)
+                ref_pin = lay_instance.terminals[term]
+                cell_net.lnet = self.layout.add_net(net_name, ref_pin)
+                cell_net.snet = self.schema.add_net(net_name)
+                if(isinstance(conn, Pin)):
+                    self.add_pin(cell_net)
+            lay_connect[term] = cell_net.lnet
+            sch_connect[term] = cell_net.snet
         lay_instance.connect(lay_connect)
         item.lay_instance = lay_instance
+        sch_instance.connect(sch_connect)
+        item.sch_instance = sch_instance
 
     def __getitem__(self, instance_name:str):
         return self.items[instance_name]
     
-    def claim(self, path:str):
-        self.layout.layout.write(path)
-
+    def claim(self, laypath:str = "", schpath = ""):
+        laypath = laypath or f"./{self.name}.gds"
+        self.layout.layout.write(laypath)
+        schpath = schpath or f"./{self.name}.cdl"
+        self.schema.save_netlist(schpath)
 
 class LeafCell(CustomCell):
     _loaded:dict[str, LeafCell] = {}
@@ -146,33 +173,5 @@ class LeafCell(CustomCell):
     def __init__(self, cell_name):
         super().__init__(cell_name)
         self.layout = LayLeafCell(cell_name)
+        self.schema = LeafNetlistCell(cell_name)
 
-class cell():
-    def __call__(self, func):
-        def wrapper(self_cell, *pins, **kwargs):
-            func(*pins, **kwargs)
-        return wrapper
-class _Substitute():
-    def __setitem__(self, instance_name:str, item:Item):
-        if(type(item) is not Item):
-            raise IPlantError("Item must be an object of Item class")
-        if(instance_name in self.items.keys()):
-            raise IPlantError(f"Item {instance_name} must have an unique name")
-        lay_instance = self.layout.insert(item.cell.layout, item.trans, item.connections)
-        item.lay_instance = lay_instance
-                
-        self.items[instance_name] = item
-
-    def __getitem__(self, instance_name:str):
-        return self.items[instance_name]
-
-def pins(*pin_names: str):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(self:CustomCell, *args, **kwargs):
-            result = func(self, *args, **kwargs)
-            for pin in pin_names:
-                self.state_pin(pin)
-            return result
-        return wrapper
-    return decorator

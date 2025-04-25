@@ -179,3 +179,5 @@ leafcells/n_mos/n_mos.cir
 leafcells/n_mos/n_mos.gds
 leafcells/p_mos/p_mos.cir
 leafcells/p_mos/p_mos.gds
+*.cdl
+*.gds

@@ -14,3 +14,6 @@ class GlobalSchematicConfigs():
 
     #
     WITH_COMMENTS:bool = False
+    
+    # Net subname delimiter
+    SUBNET_DELIMITER:str = None

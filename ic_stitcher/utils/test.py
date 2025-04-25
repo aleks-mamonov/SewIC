@@ -1,20 +1,15 @@
-import functools
+import klayout.db as kdb
 
-def add_prefix_suffix(prefix: str, suffix: str):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            result = func(*args, **kwargs)
-            if isinstance(result, str):
-                return f"{prefix}{result}{suffix}"
-            return result
-        return wrapper
-    return decorator
+netlist1 = kdb.Netlist()
+circ1 = kdb.Circuit()
+circ1.name = "test1"
+netlist1.add(circ1)
+#netlist1.write("test1.cir", kdb.NetlistSpiceWriter())
 
-class Example:
-    @add_prefix_suffix("Hello, ", "!")
-    def greet(self, name):
-        return name
-
-example = Example()
-print(example.greet("Vani"))  # Вывод: Hello, Alice!
+netlist2 = kdb.Netlist()
+circ = kdb.Circuit()
+circ.name = "test2"
+netlist2.add(circ)
+found_one = netlist1.circuit_by_name("test1")
+netlist2.add(found_one)
+netlist2.write("test2.cir", kdb.NetlistSpiceWriter())

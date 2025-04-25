@@ -1,4 +1,3 @@
-from klayout_plugin.ic_stitcher.layout.floorplaner import Layer
 from typing import List, Tuple
 from pathlib import Path
 
@@ -15,3 +14,6 @@ class GlobalSchematicConfigs():
 
     #
     WITH_COMMENTS:bool = False
+    
+    # Net subname delimiter
+    SUBNET_DELIMITER:str = None

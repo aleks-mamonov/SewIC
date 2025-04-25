@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ic-stitcher"
+version = "0.0.1"
+dependencies = [
+  "klayout=2.2.3",
+]
+authors = [
+  { name="Alexandr Mamonov"},
+]
+description = "Module to create GDS/CDL with one description, connecting subcells by PINs."
+readme = "README.md"
+requires-python = ">=3.6"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Development Status :: 3 - Alpha",
+]
+
+[tool.setuptools.packages.find]
+include = ["ic_stitcher","ic_stitcher.*"]
+
+[project.urls]
+Homepage = "https://github.com/aleks-mamonov/ic-stitcher"
+
+# [tool.pytest.ini_options]
+# addopts="-n 4"
+
+[tool.pytest.ini_options]
+addopts = "--basetemp=/netrun/pytests" # Not to use tmp, which is not accessible with LSF (??)

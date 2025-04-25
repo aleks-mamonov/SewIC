@@ -5,7 +5,7 @@ from pathlib import Path
 import logging
 from dataclasses import dataclass
 
-from ..configurations import GlobalLayoutConfigs as config
+from .global_configs import GlobalLayoutConfigs as config
 from ..configurations.layout_global_configs import Layer
 import klayout.db as kdb
 
@@ -182,7 +182,8 @@ class CustomInstance():
         self.kdb_inst = kdb_inst
         self.trans = kdb_inst.trans
         self.movement = kdb.Vector()
-        self.name = f"{name} ({self.kdb_inst.to_s()})"
+        self.name = name
+        #self.lable_name = f"{name} ({self.kdb_inst.to_s()})"
         self.ref_pins = ref_cell.pins
         
         self.terminals = self.get_terminals(ref_cell.pins)
@@ -194,7 +195,8 @@ class CustomInstance():
             self.label.delete()
         # Adding top-level label
         lbl_layer = Layer(0, 99)
-        lbl_text = kdb.Text(self.name, self._center())
+        lable_name = f"{self.name} ({self.kdb_inst.to_s()})"
+        lbl_text = kdb.Text(lable_name, self._center())
         lbl_shapes = self.parent.kdb_cell.shapes(lbl_layer.info)
         self.label = lbl_shapes.insert(lbl_text)
 
@@ -218,13 +220,13 @@ class CustomInstance():
         for pin_name, terminal in self.terminals.items():
             net = connections[pin_name]
             #terminal.displace(self.trans.disp)
-            if(not net.ref_pin):
-                net.ref_pin = terminal
-            else: 
-                displacement = net.ref_pin.distance(terminal)
+            if(net.ref_pin):
+                distance = net.ref_pin.distance(terminal)
+                if distance.x != 0 or distance.y != 0:
+                    displacement = distance
             if(net.top_pin):
                 self.terminals[pin_name] = net.top_pin
-        if(displacement):
+        if(displacement is not None):
             self.move(displacement)
                 #self.pin_to(terminal, net.ref_pin)
             #self.terminals[pin_name] = terminal
@@ -313,10 +315,11 @@ class CustomLayoutCell():
         reciter = kdb.RecursiveShapeIterator(self.layout, self.kdb_cell, layer, box)
         res = [s.shape() for s in reciter.each()]
         if(len(res) == 0):
-            LOGGER.error(f"No labels on the pin {box.to_s}")
-            raise CompilerLayoutError()
+            # LOGGER.error(f"No labels on the pin {box.to_s()}")
+            # raise CompilerLayoutError()
+            return None
         elif(len(res) > 1):
-            LOGGER.error(f"More then 1 label on the pin {box.to_s}")
+            LOGGER.error(f"More then 1 label on the pin {box.to_s()}")
             raise CompilerLayoutError()
         return res[0]
     
@@ -332,6 +335,8 @@ class CustomLayoutCell():
                 if(not isinstance(box_shape.box, kdb.Box)):
                     continue
                 label_shape = self._find_label(lbl_layer, box_shape.box)
+                if label_shape is None:
+                    continue
                 pin = LayPin(box_shape.box, lay_info[0],
                              label_shape.text, lay_info[1])
                 pins[pin.name] = pin 
