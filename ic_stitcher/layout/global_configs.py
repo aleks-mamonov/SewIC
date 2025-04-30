@@ -4,11 +4,9 @@ from pathlib import Path
 import klayout.db as kdb
 
 PIN_SETUP = tuple[str]|tuple[int,int]|tuple[int,int,str]
-class Layer():
-    def __init__(self, *args) -> None:
-        self.info = kdb.LayerInfo(*args)
+class Layer(kdb.LayerInfo):
     def __str__(self):
-        return self.info.to_s()
+        return self.to_s()
     def __repr__(self):
         return str(self)
     
@@ -18,32 +16,11 @@ class GlobalLayoutConfigs():
     LEAFCELL_PATH:List[Path | str] = []
     
     # Define layers for searching pins and labels
-    _PIN_LAY:List[tuple[Layer,Layer]] = []
+    PIN_LAY:List[tuple[Layer,Layer]] = []
     
-    @classmethod
-    def PIN_SETUPS(self,pin_setups:list[tuple[PIN_SETUP,PIN_SETUP]]):
-        try:
-            iter(pin_setups)
-        except TypeError as exc:
-            raise TypeError(f"Invalid type of pin setups: {exc}")
-        for setup in pin_setups:
-            if(not isinstance(setup, tuple)):
-                raise TypeError(f"PIN setup must be a tuple")
-            pin_layer = None
-            pin_setup = setup[0]
-            if(isinstance(pin_setup, str)):
-                pin_layer = Layer(pin_setup)
-            else:
-                pin_layer = Layer(*pin_setup)
-            label_layer = None
-            label_setup = setup[1]
-            if(isinstance(label_setup, str)):
-                label_layer = Layer(label_setup)
-            else:
-                label_layer = Layer(*label_setup)
-
-            self._PIN_LAY.append((pin_layer, label_layer))
-
+    # Define a lable layer for newly placed instances
+    INSTANCE_LABLE_LAYER:Layer = None
+    
     # KLayout layout object, used for inside-KLayout run
     KLAYOUT = None 
 
@@ -58,3 +35,9 @@ class GlobalLayoutConfigs():
         cls._tech.load(lyt_file)
         kdb.Technology.register_technology(cls._tech)
         pass
+    
+    # Print more information on Layout building
+    VERBOSE = False
+    
+    # Net and Pin subname delimiter
+    SUBNET_DELIMITER:str = "#"
