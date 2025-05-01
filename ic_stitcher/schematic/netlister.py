@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, List, Dict, Sequence, Self
 import logging
 
-from .global_configs import GlobalSchematicConfigs as config
+from ..configurations import GlobalSchematicConfigs as config
 from ..utils.Logging import addStreamHandler
 
 LOGGER = logging.getLogger(__name__)
@@ -144,7 +144,7 @@ class KDBNetlistCell():
             res[device.name] = CustomDevice(device)
         return res   
     
-    def save_netlist(self, file:str, description:str = None):
+    def save(self, file:str, description:str = None):
         netlist_writer = kdb.NetlistSpiceWriter()
         netlist_writer.use_net_names = config.SAVE_USE_NET_NAMES
         netlist_writer.with_comments = config.SAVE_WITH_COMMENTS

@@ -3,13 +3,13 @@ from dataclasses import dataclass, field
 import logging
 from uuid import uuid4
 
-from .layout.floorplaner import * 
-from .schematic.netlister import * 
-from .utils.Logging import addStreamHandler
+from ..layout.floorplaner import * 
+from ..schematic.netlister import * 
+from ..utils.Logging import addStreamHandler
 #import klayout_plugin.ip_builder.schematic.netlister as netlist
 
-from .layout.global_configs import GlobalLayoutConfigs as layconfig
-from .schematic.global_configs import GlobalSchematicConfigs as schconfig
+from ..layout.global_configs import GlobalLayoutConfigs as layconfig
+from ..schematic.global_configs import GlobalSchematicConfigs as schconfig
 
 class Pin():
     def __init__(self, name:str):
@@ -23,12 +23,24 @@ class Pin():
         new_net._netlist = self._netlist.copy()
         return new_net
         
+    def __str__(self):
+        return f"Pin:{self.name}"
+    
+    def __repr__(self):
+        return str(self)
+    
 class Net():
     def __init__(self, name:str):
         self.name = name
         self._layout:LayNet = None
         self._netlist:NetlistNet = None
         self.pin:Pin = None        
+        
+    def __str__(self):
+        return f"Net:{self.name}"
+    
+    def __repr__(self):
+        return str(self)
         
 class NetBus(list):
     def __init__(self, name:str, stop = 0):
@@ -120,9 +132,9 @@ class _BaseCell():
     
     def claim(self, laypath:str = "", schpath = ""):
         laypath = laypath or f"./{self.name}.gds"
-        self.layout.layout.write(laypath)
+        self.layout.save(laypath)
         schpath = schpath or f"./{self.name}.cdl"
-        self.netlist.save_netlist(schpath)
+        self.netlist.save(schpath)
 
 class CustomCell(_BaseCell):
     def __init__(self, cell_name:str) -> None:
@@ -141,7 +153,7 @@ class CustomCell(_BaseCell):
             try:
                 self._logger.debug(f"Connecting Layout")
                 item._connect_layout(self.layout)
-            except CompilerLayoutError as exc:
+            except LayoutError as exc:
                 raise ICStitchError(f"Failed to connect Layout.\n{exc}")
         if self.netlist is not None:
             try:
@@ -169,7 +181,7 @@ class CustomCell(_BaseCell):
     
 class LeafCell(_BaseCell):
     _loaded:dict[str, LeafCell] = {}
-    def __new__(cls, cell_name, *args, **kwargs):
+    def __new__(cls, cell_name, *arg, **kwargs):
         # Check if an object with the given name already exists
         if cell_name in cls._loaded:
             # Reusing existing object
@@ -180,27 +192,49 @@ class LeafCell(_BaseCell):
         cls._loaded[cell_name] = instance  # Store the instance in the dictionary
         return instance
     
-    def __init__(self, cell_name):
+    def __init__(self, cell_name, check_pins_mismatch = True):
         super().__init__(cell_name, LayLeafCell(cell_name), LeafNetlistCell(cell_name))
         self.pins = self._find_pins()
+        if check_pins_mismatch:
+            self._check_pins()
 
     def _find_pins(self):
-        """ Find and check all pins from Layout/Netlist """
-        pin_names: list[str] = []
-        if self.layout:
-            pin_names = sorted(list(self.layout.pins.keys()))
-            
-        if self.netlist:
-            sch_pins = sorted(list(self.netlist.pins.keys()))
-            if pin_names:
-                if pin_names != sch_pins:
-                    raise ICStitchError(f"PIN mismatch L: {pin_names} <-> N: {sch_pins}")
-            else:
-                pin_names = sch_pins
+        """ Find all pins from Layout and Netlist """
         res = {}    
-        for pin_name in pin_names:
-            pin = Pin(pin_name)
-            pin._layout = self.layout.pins[pin_name]
-            pin._netlist = self.netlist.pins[pin_name]
-            res[pin_name] = pin
+        for pin_name, lay_pin in self.layout.pins.items():
+            if pin_name in res:
+                pin = res[pin_name]
+            else:
+                pin = Pin(pin_name)
+                res[pin_name] = pin
+            pin._layout = lay_pin    
+            
+        for pin_name, sch_pin in self.netlist.pins.items():
+            if pin_name in res:
+                pin = res[pin_name]
+            else:
+                pin = Pin(pin_name)
+                res[pin_name] = pin
+            pin._netlist = sch_pin
+            
+        if not res:
+            LOGGER.warning(f"No PINs are found for a leafcell {self.name}")
+                
         return res
+
+    def _check_pins(self):
+        """ Check all pins on matching """
+        from_lay = set([n for n,p in self.pins.items() if p._layout is not None])
+        from_sch = set([n for n,p in self.pins.items() if p._netlist is not None])
+        all_pin_names = from_lay or from_sch
+        only_lay = all_pin_names ^ from_lay
+        only_sch = all_pin_names ^ from_sch
+        mismatched = False
+        if only_lay or only_sch:
+            mismatched = True
+            
+        if mismatched:
+            msg = f"Layout and Netlist PINs are mismatched for {self.name}\n"
+            msg += f"Only in LAYOUT: {list(only_lay)}\n"
+            msg += f"Only in NETLIST: {list(only_sch)}\n"
+            raise ICStitchError(msg)

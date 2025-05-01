@@ -33,7 +33,6 @@ class GlobalLayoutConfigs():
         if(not lyt_path.exists()):
             raise FileNotFoundError(lyt_file)
         cls._tech.load(lyt_file)
-        cls._tech.add_other_layers = False
         kdb.Technology.register_technology(cls._tech)
         pass
     
