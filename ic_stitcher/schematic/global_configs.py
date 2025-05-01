@@ -9,11 +9,14 @@ class GlobalSchematicConfigs():
     # Name of primitive devices, existing as a subcircuits
     NETLIST_PRIMITIVES:List[str] = []
 
-    # 
-    USE_NET_NAMES:bool = True
+    # Indicating whether to use net names (true) or net numbers (false).
+    SAVE_USE_NET_NAMES:bool = True
 
-    #
-    WITH_COMMENTS:bool = False
+    # Indicating whether to embed comments for position etc. (true) or not (false).
+    SAVE_WITH_COMMENTS:bool = False
     
     # Net subname delimiter
-    SUBNET_DELIMITER:str = None
+    SUBNET_DELIMITER:str = "#"
+    
+    # Print more information on Layout building
+    VERBOSE = False

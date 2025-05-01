@@ -5,9 +5,8 @@ from pathlib import Path
 import logging
 from dataclasses import dataclass
 
+from .global_configs import GlobalLayoutConfigs as config
 from .global_configs import Layer
-from ..configurations import _GET_LEAFCELL, Layer
-from ..configurations import GlobalLayoutConfigs as config
 from ..utils.Logging import addStreamHandler
 import klayout.db as kdb
 
@@ -24,28 +23,35 @@ M90 = kdb.Trans(3 , True, 0, 0)
 M180 = kdb.Trans(2, True, 0, 0)
 M270 = kdb.Trans(1, True, 0, 0)
 
-class LayoutError(BaseException): pass
+class CompilerLayoutError(BaseException): pass
 
 @dataclass
 class LayoutProblems():
     description:str
     values:list[kdb.Box]
+    
 
-def _load_leafcell(cell_name:str) -> kdb.Layout:
+def _MAP_LEAFCELLS() -> Dict[str,Path]:
+    res_dict = {}
+    for netlist_path in config.LEAFCELL_PATH:
+        netlist_path = Path(netlist_path)
+        res_dict[netlist_path.stem] = netlist_path
+    return res_dict
+
+LEAFCELLS = _MAP_LEAFCELLS()
+
+def _load_leafcell(call_name:str) -> kdb.Layout:
     """
     Read a cell from GDS leafcells
     """
-    path = _GET_LEAFCELL(cell_name, config.LEAFCELL_PATH)
+    path = LEAFCELLS.get(call_name)
     if(path is None):
-        raise LayoutError(f"'{cell_name}' not found in your 'LEAFCELL_PATH'")
+        LOGGER.error(f"'{call_name}' not found in {config.LEAFCELL_PATH}")
     layout = kdb.Layout(False)
     layout.technology_name = config.TECH_NAME
-    tech = layout.technology()
-    opt = tech.load_layout_options
-    opt.layer_map.assign(config.INPUT_MAPPER)
-    opt.create_other_layers = False
-    layout.read(path, opt)
+    layout.read(path)
     return layout
+
 
 class LayPinInfo():
     def __init__(self, pin_layer:Layer, lbl_layer:Layer) -> None:
@@ -250,21 +256,39 @@ class CustomInstance():
     def __repr__(self):
         return f"INST: {self} [{self.terminals}]"
 
-class KDBCell():
-    def __init__(self, kdb_cell:kdb.Cell):
-        self.name = kdb_cell.name
-        self.kdb_layout = kdb_cell.layout()
-        self.kdb_cell = kdb_cell
+class CustomLayoutCell():
+    def __init__(self, name) -> None:
+        """Create a cell represented by a KLayout cell object. 
+        If cell_name exists in the library, it will be loaded from the file. 
+        If not, empty cell will be created.
+
+        Args:
+            cell_name (str): name of the top cell to be created
+
+        Raises:
+            ERROR: _description_
+        """
+        self.name = name
+        self.layout = kdb.Layout(True)
+        self.layout.create_cell(name)
+        self.kdb_cell = self.layout.top_cell()
+        self.top_cell_id = self.layout.cell_by_name(self.name)
         self.nets: dict[str, LayNet] = {} # store new internal nets
+        self.is_empty = True
+        self.pins = {}
+        self.cells:Dict[str,KDBCell] = {}
+        self.instances:Dict[str,CustomInstance] = {}
+
+    def _map_content(self) -> None:
         self.is_empty = self.kdb_cell.is_ghost_cell()
-        self.pins:Dict[str, LayPin] = self._get_pins()
-        self.cells:Dict[str,KDBCell] = self._map_cells()
-        self.instances:Dict[str,CustomInstance] = self._map_instances()
+        self.pins = self._get_pins()
+        self.cells = self._map_cells()
+        self.instances = self._map_instances()
     
     def _map_cells(self) -> dict[str,KDBCell]:
         res:dict[str,KDBCell] = dict()
         for cl_ind in self.kdb_cell.each_child_cell():
-            child_cell = self.kdb_layout.cell(cl_ind)
+            child_cell = self.layout.cell(cl_ind)
             cell_name = child_cell.name
             loaded_cell = KDBCell(child_cell)
             # if(child_cell.is_ghost_cell()):
@@ -289,7 +313,7 @@ class KDBCell():
         """
         Find a label of a layer within a box, it's used to find pins
         """
-        reciter = kdb.RecursiveShapeIterator(self.kdb_layout, self.kdb_cell, layer, box)
+        reciter = kdb.RecursiveShapeIterator(self.layout, self.kdb_cell, layer, box)
         res = [s.shape() for s in reciter.each()]
         if(len(res) == 0):
             # LOGGER.error(f"No labels on the pin {box.to_s()}")
@@ -297,7 +321,7 @@ class KDBCell():
             return None
         elif(len(res) > 1):
             LOGGER.error(f"More then 1 label on the pin {box.to_s()}")
-            raise LayoutError()
+            raise CompilerLayoutError()
         return res[0]
     
     def _get_pins(self) -> Dict[str,LayPin]:
@@ -306,8 +330,8 @@ class KDBCell():
         """
         pins = {}
         for lay_info in config.PIN_LAY:
-            box_layer = self.kdb_layout.find_layer(lay_info[0])
-            lbl_layer = self.kdb_layout.find_layer(lay_info[1])
+            box_layer = self.layout.find_layer(lay_info[0])
+            lbl_layer = self.layout.find_layer(lay_info[1])
             for box_shape in self.kdb_cell.each_shape(box_layer):
                 if(not isinstance(box_shape.box, kdb.Box)):
                     continue
@@ -319,36 +343,6 @@ class KDBCell():
                 pins[pin.name] = pin 
         return pins
     
-    def __str__(self):
-        return self.name
-
-    def __repr__(self):
-        return f"CELL: {self} [{self.pins}]"
-    
-    def save(self, filename:str, libname:str = "ic-stitcher"):
-        tech = self.kdb_layout.technology()
-        opt = tech.save_layout_options
-        opt.gds2_write_timestamps = True
-        opt.gds2_libname = libname
-        self.kdb_layout.write(filename, options=opt)
-
-class CustomLayoutCell(KDBCell):
-    def __init__(self, name) -> None:
-        """Create a cell represented by a KLayout cell object. 
-        If cell_name exists in the library, it will be loaded from the file. 
-        If not, empty cell will be created.
-
-        Args:
-            cell_name (str): name of the top cell to be created
-
-        Raises:
-            ERROR: _description_
-        """
-        name = name
-        layout = kdb.Layout(True)
-        layout.create_cell(name)
-        super().__init__(layout.top_cell())
-    
     def _add_cell(self, cell:CustomLayoutCell):
         """ 
         Adding a cell into the current cell tree
@@ -358,7 +352,7 @@ class CustomLayoutCell(KDBCell):
         if(cell_name in self.cells.keys()):
             return self.cells[cell_name]
         cell_to_add = cell.kdb_cell
-        new_cell = self.kdb_layout.create_cell(cell_name)
+        new_cell = self.kdb_cell.layout().create_cell(cell_name)
         new_cell.copy_tree(cell_to_add)
         #self.kdb_cell.copy_tree(new_cell)
         custom_cell = KDBCell(new_cell)
@@ -368,7 +362,7 @@ class CustomLayoutCell(KDBCell):
     def insert(self, inst_name:str, cell:CustomLayoutCell, 
                trans:kdb.Trans = R0) -> CustomInstance:
         """
-        Insert an instance of a cell with inst_name (name) and trans (transformation)
+        Insert an instance of cell with inst_name (name) and trans (transformation)
         """
         ref_cell = self._add_cell(cell)
         cell_inst_arr = kdb.CellInstArray(ref_cell.kdb_cell, trans)
@@ -390,7 +384,7 @@ class CustomLayoutCell(KDBCell):
         #lpin = PlacedPin(new_box_shape, new_label_shape)
         lpin = PlacedPin(new_box_shape, new_label_shape, adjust_label=True)
         if(net.top_pin):
-            raise LayoutError(f"Pin {lpin} is already regestered for net {net}")
+            raise CompilerLayoutError(f"Pin {lpin} is already regestered for net {net}")
         net.top_pin = lpin
         self.pins[pin_name] = lpin
         return lpin
@@ -402,8 +396,34 @@ class CustomLayoutCell(KDBCell):
         self.nets[net_name] = lnet
         return lnet
     
-class LayLeafCell(KDBCell):
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return f"CELL: {self} [{self.pins}]"
+    
+class LayLeafCell(CustomLayoutCell):
     def __init__(self, name):
-        layout = _load_leafcell(name)
-        super().__init__(layout.top_cell())
+        super().__init__(name)
         LOGGER.debug(f"loading cell '{self.name}' from leafcells")
+        self._reinit(_load_leafcell(self.name))
+    
+    def _reinit(self, layout: kdb.Layout):
+        self.layout._destroy()
+        self.layout = layout
+        self.kdb_cell = self.layout.top_cell()
+        self.cell_id = self.layout.cell_by_name(self.name)
+        self._map_content()
+
+class KDBCell(CustomLayoutCell):
+    def __init__(self, kdb_cell:kdb.Cell):
+        super().__init__(kdb_cell.name)
+        LOGGER.debug(f"loading cell '{self.name}' from existing cell")
+        self._reinit(kdb_cell)
+
+    def _reinit(self, cell: kdb.Cell):
+        self.layout._destroy()
+        self.layout = cell.layout()
+        self.kdb_cell = cell
+        self.cell_id = self.layout.cell_by_name(self.name)
+        self._map_content()

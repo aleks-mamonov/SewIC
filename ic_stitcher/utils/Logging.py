@@ -67,10 +67,13 @@ class _JSONLogHandler(logging.Handler):
         formatted_json = self.formatter.format(record)
         JSONLOG.add(formatted_json, record.levelno)
 
-def addStreamHandler( logger: logging.Logger) -> None:
+def addStreamHandler( logger: logging.Logger, verbose = False) -> None:
     #logger.setLevel(logging.INFO)
     ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
+    if verbose:
+        ch.setLevel(logging.DEBUG)
+    else:
+        ch.setLevel(logging.INFO)
     # create formatter and add it to the handlers
     ch.setFormatter(_CustomFormatter())    
     # add the handlers to logger
