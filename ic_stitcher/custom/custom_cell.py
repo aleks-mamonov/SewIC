@@ -1,7 +1,6 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
 import logging
-from uuid import uuid4
+from typing import Self, TypeVar, Generic, Union
 
 from ..layout.floorplaner import * 
 from ..schematic.netlister import * 
@@ -9,8 +8,6 @@ from ..utils.Logging import addStreamHandler
 #import klayout_plugin.ip_builder.schematic.netlister as netlist
 
 from ..configurations import GlobalConfigs as globconf
-from ..configurations import GlobalLayoutConfigs as layconf
-from ..configurations import GlobalSchematicConfigs as schconf
 
 def _get_subname(full_name:str, bus_l:str, bus_r:str, delim:str, use_full = True) -> str:
         if use_full:
@@ -26,25 +23,19 @@ def _get_subname(full_name:str, bus_l:str, bus_r:str, delim:str, use_full = True
         if index:
             subname = subname+bus_l+index+bus_r
         return subname
-    
+
 class Pin():
     def __init__(self, name:str, 
                  full_name_layout = True,
                  full_name_netlist = True):
         self.full_name = name
-        self._lay_name = _get_subname(name, *layconf.BUS_BRACKETS, 
-                                      layconf.SUBNET_DELIMITER, use_full=full_name_layout)
-        self._sch_name = _get_subname(name, *schconf.BUS_BRACKETS, 
-                                      schconf.SUBNET_DELIMITER, use_full=full_name_netlist)
+        self._lay_name = _get_subname(name, *globconf.BUS_BRACKETS, 
+                                      globconf.SUBNET_DELIMITER, use_full=full_name_layout)
+        self._sch_name = _get_subname(name, *globconf.BUS_BRACKETS, 
+                                      globconf.SUBNET_DELIMITER, use_full=full_name_netlist)
         self._layout:PlacedPin|LayPin = None
         self._netlist:NetlistPin = None
 
-    def copy(self):
-        new_net = Pin(self.full_name)
-        new_net._layout = self._layout.copy()
-        new_net._netlist = self._netlist.copy()
-        return new_net
-        
     def __str__(self):
         return f"Pin:{self.full_name}"
     
@@ -56,31 +47,46 @@ class Net():
                  full_name_layout = True,
                  full_name_netlist = False):
         self.full_name = name
-        self._lay_name = _get_subname(name, *layconf.BUS_BRACKETS, 
-                                      layconf.SUBNET_DELIMITER, use_full=full_name_layout)
-        self._sch_name = _get_subname(name, *schconf.BUS_BRACKETS, 
-                                      schconf.SUBNET_DELIMITER, use_full=full_name_netlist)
+        self._lay_name = _get_subname(name, *globconf.BUS_BRACKETS, 
+                                      globconf.SUBNET_DELIMITER, use_full=full_name_layout)
+        self._sch_name = _get_subname(name, *globconf.BUS_BRACKETS, 
+                                      globconf.SUBNET_DELIMITER, use_full=full_name_netlist)
         self._layout:LayNet | None = None
         self._netlist:NetlistNet | None = None
-        self.pin:Pin | None = None        
+        self.pin:Pin | None = None
         
     def __str__(self):
         return f"Net:{self.full_name}"
     
     def __repr__(self):
         return str(self)
-        
-class NetBus(list):
-    def __init__(self, name:str, stop = 0):
-        self.name = name
-        for i in range(stop):
-            self.append(Net(f"{name}[{i}]"))
 
-class PinBus(list):
+BUSABLE = Union[Pin, Net]
+
+BUSTYPE = TypeVar("BUSTYPE", bound=BUSABLE)
+class _StrBus(list[BUSTYPE]):
+    _type:type[BUSTYPE] = BUSTYPE
+    _lbus = globconf.BUS_BRACKETS[0]
+    _rbus = globconf.BUS_BRACKETS[1]
     def __init__(self, name:str, size:int):
         self.name = name
-        for i in range(size):
-            self.append(Pin(f"{name}[{i}]"))
+        for bit in range(size):
+            index = f"{self._lbus}{bit}{self._rbus}"
+            self.append(self._type(f"{name}{index}"))
+    
+    def connect(self, net_name:str, start=0, stop=None) -> dict[str,BUSTYPE]:
+        res:dict[str,BUSTYPE] = {}
+        if stop is None:
+            stop = len(self)
+        for bit in range(start, stop):
+            index = f"{self._lbus}{bit}{self._rbus}"
+            res[f"{net_name}{index}"] = self[bit]
+        
+class NetBus(_StrBus[Net]): 
+    _type = Net
+    
+class PinBus(_StrBus[Pin]):
+    _type = Pin
         
 class ICStitchError(BaseException): ...
 
@@ -160,10 +166,18 @@ class _BaseCell():
         self.pins:dict[str, Pin] = {}
         self.nets:dict[str, Net] = {}
     
-    def claim(self, laypath:str = "", schpath = ""):
-        laypath = laypath or f"./{self.name}.gds"
+    def claim(self, outpath:str = "./", layfile:str = "", schfile = ""):
+        " Save all data in outpath with default name, or in layfile/schfile if passed "
+        layfile_name = f"{self.name}.gds"
+        laypath = Path(outpath)/layfile_name 
+        if layfile:
+            laypath = layfile
         self.layout.save(laypath)
-        schpath = schpath or f"./{self.name}.cdl"
+        
+        schfile_name = f"{self.name}.cdl"
+        schpath = Path(outpath)/schfile_name 
+        if schfile:
+            schpath = schfile
         self.netlist.save(schpath)
 
 class CustomCell(_BaseCell):

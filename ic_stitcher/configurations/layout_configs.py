@@ -20,12 +20,6 @@ class GlobalLayoutConfigs():
     # Print more information on Layout building
     VERBOSE:bool = glconf.VERBOSE
     
-    # Net and Pin subname delimiter
-    SUBNET_DELIMITER:str = glconf.SUBNET_DELIMITER
-    
-    # Bus brackets
-    BUS_BRACKETS:tuple[str,str] = glconf.BUS_BRACKETS
-    
     # Input Layer Mapping Object, see https://www.klayout.de/doc-qt5/code/class_LayerMap.html 
     # to have more information on the mapping.
     # Can run from_tech(), to load layer properties from technology file

@@ -9,7 +9,7 @@ from ..utils.Logging import addStreamHandler
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
-addStreamHandler(LOGGER)
+addStreamHandler(LOGGER, verbose=config.VERBOSE)
 
 class NetlisterError(BaseException): ...
 
@@ -190,7 +190,7 @@ class CustomNetlistCell(KDBNetlistCell):
             for ref_cell in cell.ref_cells.values():
                 self.ref_cells[ref_cell.name] = self.add(ref_cell)
         else:
-            LOGGER.debug(f"[{self.name}] inserting an existing cell '{cellname}'")
+            LOGGER.warning(f"[{self.name}] inserting an existing cell '{cellname}'")
         return new_cell
     
     def insert(self, inst_name:str, cell:CustomNetlistCell|LeafNetlistCell) -> CustomNetlistInstance:

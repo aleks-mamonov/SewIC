@@ -17,12 +17,6 @@ class GlobalSchematicConfigs():
     # Indicating whether to embed comments for position etc. (true) or not (false).
     SAVE_WITH_COMMENTS:bool = False
     
-    # Net subname delimiter
-    SUBNET_DELIMITER:str = glconf.SUBNET_DELIMITER
-    
-    # Bus brackets
-    BUS_BRACKETS:tuple[str,str] = glconf.BUS_BRACKETS
-    
     # Print more information on Layout building
     VERBOSE = glconf.VERBOSE
     

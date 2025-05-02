@@ -9,6 +9,7 @@ class Layer(kdb.LayerInfo):
     
     @classmethod
     def from_prop(cls, s:str):
+        "Get a layer info from a a property string, instead of from_string()"
         name, code = s.split(" ", maxsplit=1)
         code = code.removeprefix("(")
         layer, data = code.removesuffix(")").split("/", maxsplit=1)
@@ -16,7 +17,8 @@ class Layer(kdb.LayerInfo):
         return info
    
 class Mapper(kdb.LayerMap):
-    def from_tech(self):
+    def from_tech(self): # Layer map extension
+        " Reads a layer properties from a technology to this map, in order to remove redundant ones (not present)"
         tech = kdb.Technology.technology_by_name(GlobalConfigs.TECH_NAME)
         if not tech:
             raise ValueError(f"Technology {GlobalConfigs.TECH_NAME} is not registered, use register_tech first")
@@ -30,7 +32,7 @@ class Mapper(kdb.LayerMap):
                 self.map(inp, ind)
 
 class GlobalConfigs():
-    # Specify Technology name, it must be registered before with "register_tech"
+    # Specify Technology name, it must be registered first, see "register_tech"
     # Technology name can also be used to find valid layer names, see Mapper.from_tech()
     TECH_NAME = ""
     
@@ -47,3 +49,9 @@ class GlobalConfigs():
     # to have more information on the mapping.
     # Can run from_tech(), to load layer properties from technology file
     INPUT_MAPPER = Mapper()
+    
+    # Used to disable layout from creating and loading
+    NO_LAYOUT = False
+    
+    # Used to disable netlist from creating and loading
+    NO_NETLIST = False
