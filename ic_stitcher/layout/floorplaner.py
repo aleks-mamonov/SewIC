@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from .global_configs import Layer
 from ..configurations import _GET_LEAFCELL, Layer
 from ..configurations import GlobalLayoutConfigs as config
+from ..configurations import GlobalConfigs as globconf
 from ..utils.Logging import addStreamHandler
 import klayout.db as kdb
 
@@ -39,7 +40,7 @@ def _load_leafcell(cell_name:str) -> kdb.Layout:
     if(path is None):
         raise LayoutError(f"'{cell_name}' not found in your 'LEAFCELL_PATH'")
     layout = kdb.Layout(False)
-    layout.technology_name = config.TECH_NAME
+    layout.technology_name = globconf.TECH_NAME
     tech = layout.technology()
     opt = tech.load_layout_options
     opt.layer_map.assign(config.INPUT_MAPPER)
@@ -184,14 +185,14 @@ class CustomInstance():
         self.label:kdb.Shape = None
 
     def add_label(self):
-        if config.INSTANCE_LABLE_LAYER is None:
+        if config.INSTANCE_LABEL_LAYER is None:
             return None
         if self.label:
             self.label.delete()
         # Adding top-level label
         lable_name = f"{self.name}"
         lbl_text = kdb.Text(lable_name, self._center())
-        lbl_shapes = self.parent.kdb_cell.shapes(config.INSTANCE_LABLE_LAYER)
+        lbl_shapes = self.parent.kdb_cell.shapes(config.INSTANCE_LABEL_LAYER)
         self.label = lbl_shapes.insert(lbl_text)
 
     def get_terminals(self, pins:Dict[str,LayPin]) -> Dict[str,LayPin]:
@@ -378,9 +379,8 @@ class CustomLayoutCell(KDBCell):
         self.instances[inst_name] = custom_inst
         return custom_inst
 
-    def add_pin(self, net:LayNet):
+    def add_pin(self, net:LayNet, pin_name:str):
         inst_pin = net.ref_pin
-        pin_name = net.name
         new_pin = inst_pin.copy()
         new_pin.text.string = pin_name
         box_shapes = self.kdb_cell.shapes(new_pin.box_layer)
@@ -392,7 +392,7 @@ class CustomLayoutCell(KDBCell):
         if(net.top_pin):
             raise LayoutError(f"Pin {lpin} is already regestered for net {net}")
         net.top_pin = lpin
-        self.pins[pin_name] = lpin
+        self.pins[net.name] = lpin
         return lpin
     
     def add_net(self, net_name, ref_pin: LayPin):

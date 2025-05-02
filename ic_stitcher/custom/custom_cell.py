@@ -8,36 +8,64 @@ from ..schematic.netlister import *
 from ..utils.Logging import addStreamHandler
 #import klayout_plugin.ip_builder.schematic.netlister as netlist
 
-from ..layout.global_configs import GlobalLayoutConfigs as layconfig
-from ..schematic.global_configs import GlobalSchematicConfigs as schconfig
+from ..configurations import GlobalConfigs as globconf
+from ..configurations import GlobalLayoutConfigs as layconf
+from ..configurations import GlobalSchematicConfigs as schconf
 
+def _get_subname(full_name:str, bus_l:str, bus_r:str, delim:str, use_full = True) -> str:
+        if use_full:
+            return full_name
+        subname = full_name
+        index = ""
+        if bus_l in subname and bus_r in subname:
+            subname, index = subname.split(bus_l, maxsplit=1)
+            index = index.removesuffix(bus_r)
+            
+        if delim in subname:
+            subname, trimed_off = subname.split(delim, maxsplit=1)
+        if index:
+            subname = subname+bus_l+index+bus_r
+        return subname
+    
 class Pin():
-    def __init__(self, name:str):
-        self.name = name
+    def __init__(self, name:str, 
+                 full_name_layout = True,
+                 full_name_netlist = True):
+        self.full_name = name
+        self._lay_name = _get_subname(name, *layconf.BUS_BRACKETS, 
+                                      layconf.SUBNET_DELIMITER, use_full=full_name_layout)
+        self._sch_name = _get_subname(name, *schconf.BUS_BRACKETS, 
+                                      schconf.SUBNET_DELIMITER, use_full=full_name_netlist)
         self._layout:PlacedPin|LayPin = None
         self._netlist:NetlistPin = None
-        
+
     def copy(self):
-        new_net = Pin(self.name)
+        new_net = Pin(self.full_name)
         new_net._layout = self._layout.copy()
         new_net._netlist = self._netlist.copy()
         return new_net
         
     def __str__(self):
-        return f"Pin:{self.name}"
+        return f"Pin:{self.full_name}"
     
     def __repr__(self):
         return str(self)
     
 class Net():
-    def __init__(self, name:str):
-        self.name = name
-        self._layout:LayNet = None
-        self._netlist:NetlistNet = None
-        self.pin:Pin = None        
+    def __init__(self, name:str,
+                 full_name_layout = True,
+                 full_name_netlist = False):
+        self.full_name = name
+        self._lay_name = _get_subname(name, *layconf.BUS_BRACKETS, 
+                                      layconf.SUBNET_DELIMITER, use_full=full_name_layout)
+        self._sch_name = _get_subname(name, *schconf.BUS_BRACKETS, 
+                                      schconf.SUBNET_DELIMITER, use_full=full_name_netlist)
+        self._layout:LayNet | None = None
+        self._netlist:NetlistNet | None = None
+        self.pin:Pin | None = None        
         
     def __str__(self):
-        return f"Net:{self.name}"
+        return f"Net:{self.full_name}"
     
     def __repr__(self):
         return str(self)
@@ -49,9 +77,9 @@ class NetBus(list):
             self.append(Net(f"{name}[{i}]"))
 
 class PinBus(list):
-    def __init__(self, name:str, stop = 0):
+    def __init__(self, name:str, size:int):
         self.name = name
-        for i in range(stop):
+        for i in range(size):
             self.append(Pin(f"{name}[{i}]"))
         
 class ICStitchError(BaseException): ...
@@ -62,21 +90,21 @@ class Item():
                  trans = R0) -> None:
         if not isinstance(subcell, (CustomCell,LeafCell)):
             raise ICStitchError(f"Error: unsupported type of a subcell {subcell.__class__}, expect CustomCell or LeafCell")
-        self.cell = subcell
+        self.cell:CustomCell | LeafCell = subcell
         self.trans = trans
-        self.cell_name = subcell.name
+        self.cell_name:str = subcell.name
         self.is_instantiated = False
-        self.connections = self._map_connections(connections)
-        self.instance_name = None
-        self._lay_instance = None
-        self._sch_instance = None
+        self.connections:dict[str,Net] = self._map_connections(connections)
+        self.instance_name:str|None = None
+        self._lay_instance:CustomInstance|None = None
+        self._sch_instance:CustomNetlistInstance|None = None
         
     def _map_connections(self, connections:dict[str,str|Pin|Net]) -> dict[str,Net]:
         res = {}
         for term, conn in connections.items():
             net = None
             if isinstance(conn, Pin):
-                net = Net(conn.name)
+                net = Net(conn.full_name)
                 net.pin = conn
             elif isinstance(conn, Net):
                 net = conn
@@ -88,29 +116,31 @@ class Item():
             pin = self.cell.pins.get(term)
             if pin is None:
                 raise ICStitchError(f"PIN '{term}' is not in the cell '{self.cell_name}'")
-            res[pin.name] = net
+            res[pin.full_name] = net
         return res
     
     def _connect_layout(self, parent_lay:CustomLayoutCell):
         lay_instance = parent_lay.insert(self.instance_name, self.cell.layout, self.trans)
         for term, cell_net in self.connections.items():
-            net_name = cell_net.name
+            net_name = cell_net._lay_name
             if cell_net._layout is None: # Create a Layout Net
                 ref_pin = lay_instance.terminals[term]
                 cell_net._layout = parent_lay.add_net(net_name, ref_pin)
                 if cell_net.pin:
-                    cell_net.pin._layout = parent_lay.add_pin(cell_net._layout)
+                    pin_name = cell_net.pin._lay_name
+                    cell_net.pin._layout = parent_lay.add_pin(cell_net._layout, pin_name)
             lay_instance.connect(term, cell_net._layout)
         self._lay_instance = lay_instance
         
     def _connect_netlist(self, parent_sch:CustomNetlistCell):
         sch_instance = parent_sch.insert(self.instance_name, self.cell.netlist)
         for term, cell_net in self.connections.items():
-            net_name = cell_net.name
+            net_name = cell_net._sch_name
             if cell_net._netlist is None: # Create a Netlist Net
                 cell_net._netlist = parent_sch.add_net(net_name)
                 if cell_net.pin:
-                    cell_net.pin._netlist = parent_sch.add_pin(cell_net._netlist)
+                    pin_name = cell_net.pin._sch_name
+                    cell_net.pin._netlist = parent_sch.add_pin(cell_net._netlist, pin_name)
             sch_instance.connect(term, cell_net._netlist)
         self._sch_instance = sch_instance
     

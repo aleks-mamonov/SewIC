@@ -1,6 +1,8 @@
 from typing import List, Tuple
 from pathlib import Path
 
+from .global_configs import GlobalConfigs as glconf
+
 class GlobalSchematicConfigs():
     # Define the list of pathes to layout leafcells
     # Better use glob from pathlib.Path
@@ -16,7 +18,11 @@ class GlobalSchematicConfigs():
     SAVE_WITH_COMMENTS:bool = False
     
     # Net subname delimiter
-    SUBNET_DELIMITER:str = "#"
+    SUBNET_DELIMITER:str = glconf.SUBNET_DELIMITER
+    
+    # Bus brackets
+    BUS_BRACKETS:tuple[str,str] = glconf.BUS_BRACKETS
     
     # Print more information on Layout building
-    VERBOSE = False
+    VERBOSE = glconf.VERBOSE
+    

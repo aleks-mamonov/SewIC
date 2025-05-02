@@ -1,6 +1,7 @@
-from .layout import *
-from .schematic import *
+from .layout_configs import *
+from .schematic_configs import *
 #from .abstract import *
+from .global_configs import *
 
 REGISTERED_TECHS = []
 def register_tech(lyt_file:str):
@@ -11,9 +12,6 @@ def register_tech(lyt_file:str):
         new_tech.load(lyt_file)
         REGISTERED_TECHS.append(kdb.Technology.register_technology(new_tech))
         
-class GlobalConfigurations():
-    pass
-
 def _GET_LEAFCELL(name:str, pathes:list[Path]):
     for path in pathes:
         if Path(path).stem == name:

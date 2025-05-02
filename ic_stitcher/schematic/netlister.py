@@ -161,9 +161,6 @@ class CustomNetlistCell(KDBNetlistCell):
         super().__init__(kdb_netlist, top_cell)
         
     def add_net(self, net_name:str):
-        if config.SUBNET_DELIMITER:
-            if(net_name.find(config.SUBNET_DELIMITER) != -1):
-                net_name = net_name.split(config.SUBNET_DELIMITER)[0]
         if net_name in self.nets:
             return self.nets[net_name]
         kdb_net = self.kdb_circuit.create_net(net_name)
@@ -171,14 +168,14 @@ class CustomNetlistCell(KDBNetlistCell):
         self.nets[net.name] = net
         return net
         
-    def add_pin(self, net:NetlistNet):
-        pin_name = net.name
+    def add_pin(self, net:NetlistNet, pin_name:str):
         if pin_name in self.pins:
-            raise NetlisterError(f"Trying to add existing pin '{pin_name}'")
+            return self.pins[pin_name]
+            # raise NetlisterError(f"Trying to add existing pin '{pin_name}'")
         kdb_pin = self.kdb_circuit.create_pin(pin_name)
         pin = NetlistPin(kdb_pin)
         self.kdb_circuit.connect_pin(kdb_pin, net.kdb_net)
-        self.pins[pin.name] = pin
+        self.pins[pin_name] = pin
         net.pin = pin
         self.orderd_pins.append(pin)
         return pin
