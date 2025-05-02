@@ -3,8 +3,10 @@ Module contains some conviniences for integration Custom Cells,
 that based on IC-stitcher, into KLayout Library as PCells.
 IC-stitcher module has to be installed and visible for KLayout,
 use 'sys.path.append(<path_to_python_lib_with_stitcher>)' to achieve this
+
+!!! Don't use outside of Klayout !!!
 """
-import flayout
+# import flayout # A lot of function are taken from it, quite helpfull
 import pya
 from inspect import Parameter, signature, Signature
 from typing import Callable, Optional
@@ -81,12 +83,19 @@ class PCellFactory(pya.PCellDeclarationHelper):
         ) or {}
         return sig_new
 
-MYLIB = pya.Library()
-MYLIB.description = "IC-stitcher Library"
+def all_subclasses(cls):
+    return set(cls.__subclasses__()).union(
+        [s for c in cls.__subclasses__() for s in all_subclasses(c)])
 
-def register_pcell(name:str, custom_subclass:type[CustomCell]):
-    MYLIB.layout().register_pcell(name, PCellFactory(custom_subclass))
-MYLIB.register("IC-stitcher based")
+MYLIB = pya.Library()
+def register_pcell_lib(libname:str, description:str = "IC-stitcher based library", subclasses = []):
+    MYLIB.description = description
+    if not subclasses:
+        subclasses:set[type[CustomCell]] = all_subclasses(CustomCell)
+    for subcls in subclasses:
+        MYLIB.layout().register_pcell(subcls.__name__, PCellFactory(subcls))
+    MYLIB.register(libname)
+    
 # Klayout PCell type -> Python type Mapper
 def _klayout_type(param: Parameter):
     type_map = {
