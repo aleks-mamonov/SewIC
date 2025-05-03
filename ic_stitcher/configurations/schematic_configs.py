@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Union
 from pathlib import Path
 
 from .global_configs import GlobalConfigs as glconf
@@ -6,7 +6,7 @@ from .global_configs import GlobalConfigs as glconf
 class GlobalSchematicConfigs():
     # Define the list of pathes to layout leafcells
     # Better use glob from pathlib.Path
-    LEAFCELL_PATH:List[Path | str] = []
+    LEAFCELL_PATH:List[Union[Path,str]] = []
     
     # Name of primitive devices, existing as a subcircuits
     NETLIST_PRIMITIVES:List[str] = []

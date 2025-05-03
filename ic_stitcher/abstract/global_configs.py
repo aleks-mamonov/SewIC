@@ -1,9 +1,11 @@
-from typing import List, Tuple
+from typing import List, Tuple, Union
 from pathlib import Path
 
-import klayout.db as kdb
-
-PIN_SETUP = tuple[str]|tuple[int,int]|tuple[int,int,str]
+try:
+    import klayout.db as kdb
+except ModuleNotFoundError as e:
+    import pya as kdb
+    
 class Layer(kdb.LayerInfo):
     def __str__(self):
         return self.to_s()
@@ -13,7 +15,7 @@ class Layer(kdb.LayerInfo):
 class GlobalLayoutConfigs():
     # Define the list of pathes to layout leafcells, 
     # best to use Path().glob(your_path)
-    LEAFCELL_PATH:List[Path | str] = []
+    LEAFCELL_PATH:List[Union[Path, str]] = []
     
     # Define layers for searching pins and labels
     PIN_LAY:List[tuple[Layer,Layer]] = []

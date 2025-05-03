@@ -1,5 +1,9 @@
-import klayout.db as kdb
 import xml.etree.ElementTree as ET
+
+try:
+    import klayout.db as kdb
+except ModuleNotFoundError as e:
+    import pya as kdb
 
 class Layer(kdb.LayerInfo):
     def __str__(self):

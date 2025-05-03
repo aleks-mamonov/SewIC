@@ -4,7 +4,7 @@ that based on IC-stitcher, into KLayout Library as PCells.
 IC-stitcher module has to be installed and visible for KLayout,
 use 'sys.path.append(<path_to_python_lib_with_stitcher>)' to achieve this
 
-!!! Don't use outside of Klayout !!!
+!!! Not usable outside the Klayout !!!
 """
 # import flayout # A lot of function are taken from it, quite helpfull
 import pya

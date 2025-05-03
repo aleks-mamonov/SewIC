@@ -1,15 +1,13 @@
-from typing import List, Tuple
+from typing import List, Tuple, Union
 from pathlib import Path
 
-import klayout.db as kdb
-import xml.etree.ElementTree as ET
 from .global_configs import GlobalConfigs as glconf
 from .global_configs import Layer, Mapper
 
 class GlobalLayoutConfigs():
     # Define the list of pathes to layout leafcells, 
     # best to use Path().glob(your_pattern)
-    LEAFCELL_PATH:List[Path | str] = []
+    LEAFCELL_PATH:List[Union[Path, str]] = []
     
     # Define layers for searching pins and labels
     PIN_LAY:List[tuple[Layer,Layer]] = []

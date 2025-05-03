@@ -3,15 +3,16 @@ from typing import Dict, List
 import logging
 #from dataclasses import dataclass
 
-from .global_configs import Layer
 from ..configurations import _GET_LEAFCELL, Layer
 from ..configurations import GlobalLayoutConfigs as config
 from ..configurations import GlobalConfigs as globconf
 from ..utils.Logging import addStreamHandler
+
 try:
     import klayout.db as kdb
 except ModuleNotFoundError as e:
     import pya as kdb
+    
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.DEBUG)
 addStreamHandler(LOGGER, verbose=config.VERBOSE)
