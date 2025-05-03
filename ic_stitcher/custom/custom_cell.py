@@ -1,93 +1,15 @@
 #from __future__ import annotations
 import logging
-from typing import TypeVar, Union, Dict, List, Type
+from typing import Union, Dict
+from abc import ABC
 
-from ..layout.floorplaner import * 
-from ..schematic.netlister import * 
-from ..utils.Logging import addStreamHandler
+from ic_stitcher.layout.floorplaner import * 
+from ic_stitcher.schematic.netlister import * 
+from ic_stitcher.utils.Logging import addStreamHandler
 #import klayout_plugin.ip_builder.schematic.netlister as netlist
 
-from ..configurations import GlobalConfigs as globconf
+from ic_stitcher.custom.connections import Pin, Net
 
-def _get_subname(full_name:str, bus_l:str, bus_r:str, delim:str, use_full = True) -> str:
-        if use_full:
-            return full_name
-        subname = full_name
-        index = ""
-        if bus_l in subname and bus_r in subname:
-            subname, index = subname.split(bus_l, maxsplit=1)
-            index = index.removesuffix(bus_r)
-            
-        if delim in subname:
-            subname, trimed_off = subname.split(delim, maxsplit=1)
-        if index:
-            subname = subname+bus_l+index+bus_r
-        return subname
-
-class Pin():
-    def __init__(self, name:str, 
-                 full_name_layout = True,
-                 full_name_netlist = True):
-        self.full_name = name
-        self._lay_name = _get_subname(name, *globconf.BUS_BRACKETS, 
-                                      globconf.SUBNET_DELIMITER, use_full=full_name_layout)
-        self._sch_name = _get_subname(name, *globconf.BUS_BRACKETS, 
-                                      globconf.SUBNET_DELIMITER, use_full=full_name_netlist)
-        self._layout:Union[PlacedPin,LayPin] = None
-        self._netlist:NetlistPin = None
-
-    def __str__(self):
-        return f"Pin:{self.full_name}"
-    
-    def __repr__(self):
-        return str(self)
-    
-class Net():
-    def __init__(self, name:str,
-                 full_name_layout = True,
-                 full_name_netlist = False):
-        self.full_name = name
-        self._lay_name = _get_subname(name, *globconf.BUS_BRACKETS, 
-                                      globconf.SUBNET_DELIMITER, use_full=full_name_layout)
-        self._sch_name = _get_subname(name, *globconf.BUS_BRACKETS, 
-                                      globconf.SUBNET_DELIMITER, use_full=full_name_netlist)
-        self._layout:Union[LayNet,None] = None
-        self._netlist:Union[NetlistNet,None] = None
-        self.pin:Union[Pin,None] = None
-        
-    def __str__(self):
-        return f"Net:{self.full_name}"
-    
-    def __repr__(self):
-        return str(self)
-
-#BUSABLE = Union[Pin, Net]
-
-BUSTYPE = TypeVar("BUSTYPE", bound=Union[Pin, Net])
-class _StrBus(List[BUSTYPE]):
-    _type:Type[BUSTYPE] = BUSTYPE
-    _lbus = globconf.BUS_BRACKETS[0]
-    _rbus = globconf.BUS_BRACKETS[1]
-    def __init__(self, name:str, size:int):
-        self.name = name
-        for bit in range(size):
-            index = f"{self._lbus}{bit}{self._rbus}"
-            self.append(self._type(f"{name}{index}"))
-    
-    def connect(self, net_name:str, start=0, stop=None) -> Dict[str,BUSTYPE]:
-        res:Dict[str,BUSTYPE] = {}
-        if stop is None:
-            stop = len(self)
-        for bit in range(start, stop):
-            index = f"{self._lbus}{bit}{self._rbus}"
-            res[f"{net_name}{index}"] = self[bit]
-        
-class NetBus(_StrBus[Net]): 
-    _type = Net
-    
-class PinBus(_StrBus[Pin]):
-    _type = Pin
-        
 class ICStitchError(BaseException): ...
 
 class Item():
@@ -187,7 +109,7 @@ class _BaseCell():
                 schpath = out_path/schfile_name 
             self.netlist.save(schpath)
 
-class CustomCell(_BaseCell):
+class CustomCell(_BaseCell, ABC):
     def __init__(self, cell_name:str) -> None:
         super().__init__(cell_name, CustomLayoutCell(cell_name), CustomNetlistCell(cell_name))
                 
@@ -256,7 +178,7 @@ class LeafCell(_BaseCell):
             if pin_name in res:
                 pin = res[pin_name]
             else:
-                pin = Pin(pin_name)
+                pin = Pin.from_text(pin_name)
                 res[pin_name] = pin
             pin._layout = lay_pin    
             
@@ -264,7 +186,7 @@ class LeafCell(_BaseCell):
             if pin_name in res:
                 pin = res[pin_name]
             else:
-                pin = Pin(pin_name)
+                pin = Pin.from_text(pin_name)
                 res[pin_name] = pin
             pin._netlist = sch_pin
             

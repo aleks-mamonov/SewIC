@@ -1,9 +1,13 @@
 import xml.etree.ElementTree as ET
 
+_IS_KLAYOUT = False # Some Klayout patches when are needed
+from ic_stitcher.utils.compatability import remove_prefix, remove_suffix
+
 try:
     import klayout.db as kdb
 except Exception:
     import pya as kdb
+    _IS_KLAYOUT = True
 
 class Layer(kdb.LayerInfo):
     def __str__(self):
@@ -15,8 +19,8 @@ class Layer(kdb.LayerInfo):
     def from_prop(cls, s:str):
         "Get a layer info from a a property string, instead of from_string()"
         name, code = s.split(" ", maxsplit=1)
-        code = code.removeprefix("(")
-        layer, data = code.removesuffix(")").split("/", maxsplit=1)
+        code = remove_prefix(code,"(")
+        layer, data = remove_suffix(code,")").split("/", maxsplit=1)
         info = cls(int(layer), int(data), name)
         return info
    

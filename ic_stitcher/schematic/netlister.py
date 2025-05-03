@@ -3,13 +3,8 @@ from pathlib import Path
 from typing import List, Dict, Union
 import logging
 
-try:
-    import klayout.db as kdb
-except Exception:
-    import pya as kdb
-    
 from ..configurations import GlobalSchematicConfigs as config
-from ..configurations import _GET_LEAFCELL
+from ..configurations import _GET_LEAFCELL, kdb
 from ..utils.Logging import addStreamHandler
 
 LOGGER = logging.getLogger(__name__)

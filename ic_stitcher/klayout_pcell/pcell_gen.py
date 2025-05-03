@@ -13,10 +13,11 @@ from typing import Callable, Optional, Type
 
 from ic_stitcher import CustomCell
 
-# PCell class that creates the PCell
+# PCell class that creates the PCell from a class defenition
 class PCellFactory(pya.PCellDeclarationHelper):
     def __init__(self, subclass:Type[CustomCell]) -> None:
         """Create a PCell from a subclass of a CustomCell class."""
+        super().__init__()
         self.subclass = subclass
         # Getting a signiture of __init__
         self.init_sig = self._extract_sig(subclass.__init__) or {}
@@ -52,7 +53,7 @@ class PCellFactory(pya.PCellDeclarationHelper):
         if len(sig.parameters) == 0:
             return new_params
 
-        new_params = {'name': Parameter('name', kind=Parameter.KEYWORD_ONLY, default=self.func_name, annotation=str)}
+        new_params = {'cell_name': Parameter('cell_name', kind=Parameter.KEYWORD_ONLY, default=self.func_name, annotation=str)}
         params = sig.parameters
         on_error = _validate_on_error(on_error)
         for name, param in params.items():
