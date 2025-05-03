@@ -5,7 +5,7 @@ import logging
 
 try:
     import klayout.db as kdb
-except ModuleNotFoundError as e:
+except Exception:
     import pya as kdb
     
 from ..configurations import GlobalSchematicConfigs as config

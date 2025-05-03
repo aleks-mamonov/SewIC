@@ -2,7 +2,7 @@ import xml.etree.ElementTree as ET
 
 try:
     import klayout.db as kdb
-except ModuleNotFoundError as e:
+except Exception:
     import pya as kdb
 
 class Layer(kdb.LayerInfo):

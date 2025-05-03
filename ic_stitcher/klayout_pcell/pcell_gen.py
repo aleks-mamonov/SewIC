@@ -9,13 +9,13 @@ use 'sys.path.append(<path_to_python_lib_with_stitcher>)' to achieve this
 # import flayout # A lot of function are taken from it, quite helpfull
 import pya
 from inspect import Parameter, signature, Signature
-from typing import Callable, Optional
+from typing import Callable, Optional, Type
 
 from ic_stitcher import CustomCell
 
 # PCell class that creates the PCell
 class PCellFactory(pya.PCellDeclarationHelper):
-    def __init__(self, subclass:type[CustomCell]) -> None:
+    def __init__(self, subclass:Type[CustomCell]) -> None:
         """Create a PCell from a subclass of a CustomCell class."""
         self.subclass = subclass
         # Getting a signiture of __init__
@@ -91,7 +91,7 @@ MYLIB = pya.Library()
 def register_pcell_lib(libname:str, description:str = "IC-stitcher based library", subclasses = []):
     MYLIB.description = description
     if not subclasses:
-        subclasses:set[type[CustomCell]] = all_subclasses(CustomCell)
+        subclasses:set[Type[CustomCell]] = all_subclasses(CustomCell)
     for subcls in subclasses:
         MYLIB.layout().register_pcell(subcls.__name__, PCellFactory(subcls))
     MYLIB.register(libname)

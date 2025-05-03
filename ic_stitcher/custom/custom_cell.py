@@ -1,6 +1,6 @@
 #from __future__ import annotations
 import logging
-from typing import TypeVar, Union, Dict, List
+from typing import TypeVar, Union, Dict, List, Type
 
 from ..layout.floorplaner import * 
 from ..schematic.netlister import * 
@@ -65,7 +65,7 @@ class Net():
 
 BUSTYPE = TypeVar("BUSTYPE", bound=Union[Pin, Net])
 class _StrBus(List[BUSTYPE]):
-    _type:type[BUSTYPE] = BUSTYPE
+    _type:Type[BUSTYPE] = BUSTYPE
     _lbus = globconf.BUS_BRACKETS[0]
     _rbus = globconf.BUS_BRACKETS[1]
     def __init__(self, name:str, size:int):

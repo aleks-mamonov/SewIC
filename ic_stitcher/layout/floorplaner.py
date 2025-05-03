@@ -10,7 +10,7 @@ from ..utils.Logging import addStreamHandler
 
 try:
     import klayout.db as kdb
-except ModuleNotFoundError as e:
+except Exception:
     import pya as kdb
     
 LOGGER = logging.getLogger(__name__)
