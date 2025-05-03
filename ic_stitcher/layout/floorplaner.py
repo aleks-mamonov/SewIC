@@ -1,17 +1,17 @@
-from __future__ import annotations
-from typing import Any, Dict, List
-from typing import overload
-from pathlib import Path
+#from __future__ import annotations
+from typing import Dict, List
 import logging
-from dataclasses import dataclass
+#from dataclasses import dataclass
 
 from .global_configs import Layer
 from ..configurations import _GET_LEAFCELL, Layer
 from ..configurations import GlobalLayoutConfigs as config
 from ..configurations import GlobalConfigs as globconf
 from ..utils.Logging import addStreamHandler
-import klayout.db as kdb
-
+try:
+    import klayout.db as kdb
+except ModuleNotFoundError as e:
+    import pya as kdb
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.DEBUG)
 addStreamHandler(LOGGER, verbose=config.VERBOSE)
@@ -27,10 +27,10 @@ M270 = kdb.Trans(1, True, 0, 0)
 
 class LayoutError(BaseException): pass
 
-@dataclass
+#@dataclass
 class LayoutProblems():
     description:str
-    values:list[kdb.Box]
+    values:List[kdb.Box]
 
 def _load_leafcell(cell_name:str) -> kdb.Layout:
     """
@@ -86,20 +86,20 @@ class LayPin(): # Virtual Pin
         self._transform_box(trans)
         self._transform_text(trans)
 
-    def move_to(self, pin: LayPin):
+    def move_to(self, pin: "LayPin"):
         displ = pin.distance(self)
         if displ.x != 0 or displ.y != 0:
             self.transform(kdb.Trans(displ))
     
-    def distance(self, pin:LayPin) -> kdb.Vector:
+    def distance(self, pin:"LayPin") -> kdb.Vector:
         p1 = self.box.p1
         p2 = pin.box.p1
         return p1 - p2
 
-    def __eq__(self, value: LayPin) -> bool:
+    def __eq__(self, value: "LayPin") -> bool:
         return self.name == value.name and self.xor(value).is_empty()
     
-    def xor(self, pin:LayPin) -> kdb.Region:
+    def xor(self, pin:"LayPin") -> kdb.Region:
         xor = kdb.Region(self.box) ^ kdb.Region(pin.box)
         return xor
     
@@ -167,8 +167,8 @@ class LayNet():
 
 class CustomInstance():
     def __init__(self, name:str, 
-                 ref_cell: CustomLayoutCell,
-                 parent: CustomLayoutCell,
+                 ref_cell: "CustomLayoutCell",
+                 parent: "CustomLayoutCell",
                  kdb_inst:kdb.Instance) -> None:
         self.ref_cell = ref_cell
         self.parent = parent
@@ -180,7 +180,7 @@ class CustomInstance():
         self.ref_pins = ref_cell.pins
         
         self.terminals = self.get_terminals(ref_cell.pins)
-        self.nets:dict[str, LayNet] = {}
+        self.nets:Dict[str, LayNet] = {}
         self.is_pinned = False
         self.label:kdb.Shape = None
 
@@ -256,14 +256,14 @@ class KDBCell():
         self.name = kdb_cell.name
         self.kdb_layout = kdb_cell.layout()
         self.kdb_cell = kdb_cell
-        self.nets: dict[str, LayNet] = {} # store new internal nets
+        self.nets: Dict[str, LayNet] = {} # store new internal nets
         self.is_empty = self.kdb_cell.is_ghost_cell()
         self.pins:Dict[str, LayPin] = self._get_pins()
         self.cells:Dict[str,KDBCell] = self._map_cells()
         self.instances:Dict[str,CustomInstance] = self._map_instances()
     
-    def _map_cells(self) -> dict[str,KDBCell]:
-        res:dict[str,KDBCell] = dict()
+    def _map_cells(self) -> Dict[str,"KDBCell"]:
+        res:Dict[str,KDBCell] = dict()
         for cl_ind in self.kdb_cell.each_child_cell():
             child_cell = self.kdb_layout.cell(cl_ind)
             cell_name = child_cell.name
@@ -276,7 +276,7 @@ class KDBCell():
             res[cell_name] = loaded_cell
         return res
     
-    def _map_instances(self) -> dict[str, CustomInstance]:
+    def _map_instances(self) -> Dict[str, CustomInstance]:
         res = dict()
         for inst in self.kdb_cell.each_inst():
             cell_reference:kdb.Cell = inst.cell
@@ -350,7 +350,7 @@ class CustomLayoutCell(KDBCell):
         layout.create_cell(name)
         super().__init__(layout.top_cell())
     
-    def _add_cell(self, cell:CustomLayoutCell):
+    def _add_cell(self, cell:"CustomLayoutCell"):
         """ 
         Adding a cell into the current cell tree
         """
@@ -366,7 +366,7 @@ class CustomLayoutCell(KDBCell):
         self.cells[cell_name] = custom_cell
         return custom_cell
     
-    def insert(self, inst_name:str, cell:CustomLayoutCell, 
+    def insert(self, inst_name:str, cell:"CustomLayoutCell", 
                trans:kdb.Trans = R0) -> CustomInstance:
         """
         Insert an instance of a cell with inst_name (name) and trans (transformation)

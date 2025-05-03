@@ -1,1 +1,1 @@
-from .pcell_gen import register_pcell
+from .pcell_gen import register_pcell_lib

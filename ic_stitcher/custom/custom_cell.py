@@ -1,6 +1,6 @@
-from __future__ import annotations
+#from __future__ import annotations
 import logging
-from typing import Self, TypeVar, Generic, Union
+from typing import TypeVar, Union, Dict, List
 
 from ..layout.floorplaner import * 
 from ..schematic.netlister import * 
@@ -33,7 +33,7 @@ class Pin():
                                       globconf.SUBNET_DELIMITER, use_full=full_name_layout)
         self._sch_name = _get_subname(name, *globconf.BUS_BRACKETS, 
                                       globconf.SUBNET_DELIMITER, use_full=full_name_netlist)
-        self._layout:PlacedPin|LayPin = None
+        self._layout:Union[PlacedPin,LayPin] = None
         self._netlist:NetlistPin = None
 
     def __str__(self):
@@ -51,9 +51,9 @@ class Net():
                                       globconf.SUBNET_DELIMITER, use_full=full_name_layout)
         self._sch_name = _get_subname(name, *globconf.BUS_BRACKETS, 
                                       globconf.SUBNET_DELIMITER, use_full=full_name_netlist)
-        self._layout:LayNet | None = None
-        self._netlist:NetlistNet | None = None
-        self.pin:Pin | None = None
+        self._layout:Union[LayNet,None] = None
+        self._netlist:Union[NetlistNet,None] = None
+        self.pin:Union[Pin,None] = None
         
     def __str__(self):
         return f"Net:{self.full_name}"
@@ -61,10 +61,10 @@ class Net():
     def __repr__(self):
         return str(self)
 
-BUSABLE = Union[Pin, Net]
+#BUSABLE = Union[Pin, Net]
 
-BUSTYPE = TypeVar("BUSTYPE", bound=BUSABLE)
-class _StrBus(list[BUSTYPE]):
+BUSTYPE = TypeVar("BUSTYPE", bound=Union[Pin, Net])
+class _StrBus(List[BUSTYPE]):
     _type:type[BUSTYPE] = BUSTYPE
     _lbus = globconf.BUS_BRACKETS[0]
     _rbus = globconf.BUS_BRACKETS[1]
@@ -74,8 +74,8 @@ class _StrBus(list[BUSTYPE]):
             index = f"{self._lbus}{bit}{self._rbus}"
             self.append(self._type(f"{name}{index}"))
     
-    def connect(self, net_name:str, start=0, stop=None) -> dict[str,BUSTYPE]:
-        res:dict[str,BUSTYPE] = {}
+    def connect(self, net_name:str, start=0, stop=None) -> Dict[str,BUSTYPE]:
+        res:Dict[str,BUSTYPE] = {}
         if stop is None:
             stop = len(self)
         for bit in range(start, stop):
@@ -91,21 +91,21 @@ class PinBus(_StrBus[Pin]):
 class ICStitchError(BaseException): ...
 
 class Item():
-    def __init__(self, subcell:CustomCell | LeafCell,
-                 connections:dict[str,str|Pin|Net],
+    def __init__(self, subcell:Union["CustomCell", "LeafCell"],
+                 connections:Dict[str,Union[str,Pin,Net]],
                  trans = R0) -> None:
         if not isinstance(subcell, (CustomCell,LeafCell)):
             raise ICStitchError(f"Error: unsupported type of a subcell {subcell.__class__}, expect CustomCell or LeafCell")
-        self.cell:CustomCell | LeafCell = subcell
+        self.cell:Union[CustomCell,LeafCell] = subcell
         self.trans = trans
         self.cell_name:str = subcell.name
         self.is_instantiated = False
-        self.connections:dict[str,Net] = self._map_connections(connections)
-        self.instance_name:str|None = None
-        self._lay_instance:CustomInstance|None = None
-        self._sch_instance:CustomNetlistInstance|None = None
+        self.connections:Dict[str,Net] = self._map_connections(connections)
+        self.instance_name:Union[str,None] = None
+        self._lay_instance:Union[CustomInstance,None] = None
+        self._sch_instance:Union[CustomNetlistInstance,None] = None
         
-    def _map_connections(self, connections:dict[str,str|Pin|Net]) -> dict[str,Net]:
+    def _map_connections(self, connections:Dict[str,Union[str,Pin,Net]]) -> Dict[str,Net]:
         res = {}
         for term, conn in connections.items():
             net = None
@@ -162,23 +162,30 @@ class _BaseCell():
         addStreamHandler(self._logger, verbose=True)
         self._logger.setLevel(logging.DEBUG)
         self._logger.debug(f"Cell: {cell_name}")
-        self.items:dict[str, Item] = {}
-        self.pins:dict[str, Pin] = {}
-        self.nets:dict[str, Net] = {}
+        self.items:Dict[str, Item] = {}
+        self.pins:Dict[str, Pin] = {}
+        self.nets:Dict[str, Net] = {}
     
     def claim(self, outpath:str = "./", layfile:str = "", schfile = ""):
-        " Save all data in outpath with default name, or in layfile/schfile if passed "
-        layfile_name = f"{self.name}.gds"
-        laypath = Path(outpath)/layfile_name 
-        if layfile:
-            laypath = layfile
-        self.layout.save(laypath)
+        " Save all data in outpath with default name, or in layfile/schfile if present "
+        out_path = Path(outpath)
+        if self.layout:
+            if layfile:
+                laypath = layfile
+            else:
+                layfile_name = f"{self.name}.gds"
+                out_path.mkdir(parents=True, exist_ok=True)
+                laypath = out_path/layfile_name 
+            self.layout.save(laypath)
         
-        schfile_name = f"{self.name}.cdl"
-        schpath = Path(outpath)/schfile_name 
-        if schfile:
-            schpath = schfile
-        self.netlist.save(schpath)
+        if self.netlist:
+            if schfile:
+                schpath = schfile
+            else:
+                schfile_name = f"{self.name}.cdl"
+                out_path.mkdir(parents=True, exist_ok=True)
+                schpath = out_path/schfile_name 
+            self.netlist.save(schpath)
 
 class CustomCell(_BaseCell):
     def __init__(self, cell_name:str) -> None:
@@ -224,7 +231,7 @@ class CustomCell(_BaseCell):
         return net
     
 class LeafCell(_BaseCell):
-    _loaded:dict[str, LeafCell] = {}
+    _loaded:Dict[str, "LeafCell"] = {}
     def __new__(cls, cell_name, *arg, **kwargs):
         # Check if an object with the given name already exists
         if cell_name in cls._loaded:

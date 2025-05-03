@@ -1,0 +1,4 @@
+# requirements.txt
+
+flayout @ git+https://github.com/flaport/flayout.git@933059c855b16bfff0fd5f9a516b9f59126f5932
+klayout==0.30.0
