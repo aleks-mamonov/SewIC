@@ -1,15 +1,12 @@
-from __future__ import annotations
-from typing import Any, Dict, List
-from typing import overload
-from pathlib import Path
+#from __future__ import annotations
+from typing import Dict, List
 import logging
-from dataclasses import dataclass
+#from dataclasses import dataclass
 
-from .global_configs import Layer
-from ..configurations import _GET_LEAFCELL, Layer
+from ..configurations import _GET_LEAFCELL, Layer, kdb
 from ..configurations import GlobalLayoutConfigs as config
+from ..configurations import GlobalConfigs as globconf
 from ..utils.Logging import addStreamHandler
-import klayout.db as kdb
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.DEBUG)
@@ -26,10 +23,10 @@ M270 = kdb.Trans(1, True, 0, 0)
 
 class LayoutError(BaseException): pass
 
-@dataclass
+#@dataclass
 class LayoutProblems():
     description:str
-    values:list[kdb.Box]
+    values:List[kdb.Box]
 
 def _load_leafcell(cell_name:str) -> kdb.Layout:
     """
@@ -39,12 +36,12 @@ def _load_leafcell(cell_name:str) -> kdb.Layout:
     if(path is None):
         raise LayoutError(f"'{cell_name}' not found in your 'LEAFCELL_PATH'")
     layout = kdb.Layout(False)
-    layout.technology_name = config.TECH_NAME
+    layout.technology_name = globconf.TECH_NAME
     tech = layout.technology()
     opt = tech.load_layout_options
     opt.layer_map.assign(config.INPUT_MAPPER)
-    opt.create_other_layers = False
-    layout.read(path, opt)
+    opt.create_other_layers = config.CREATE_OTHER_LAYERS
+    layout.read(str(path.resolve()), opt)
     return layout
 
 class LayPinInfo():
@@ -85,20 +82,20 @@ class LayPin(): # Virtual Pin
         self._transform_box(trans)
         self._transform_text(trans)
 
-    def move_to(self, pin: LayPin):
+    def move_to(self, pin: "LayPin"):
         displ = pin.distance(self)
         if displ.x != 0 or displ.y != 0:
             self.transform(kdb.Trans(displ))
     
-    def distance(self, pin:LayPin) -> kdb.Vector:
+    def distance(self, pin:"LayPin") -> kdb.Vector:
         p1 = self.box.p1
         p2 = pin.box.p1
         return p1 - p2
 
-    def __eq__(self, value: LayPin) -> bool:
+    def __eq__(self, value: "LayPin") -> bool:
         return self.name == value.name and self.xor(value).is_empty()
     
-    def xor(self, pin:LayPin) -> kdb.Region:
+    def xor(self, pin:"LayPin") -> kdb.Region:
         xor = kdb.Region(self.box) ^ kdb.Region(pin.box)
         return xor
     
@@ -126,7 +123,8 @@ class PlacedPin(LayPin): # Shape-based, to be able to move
     def center_label(self):
         box_center = self.box.center()
         rot = R0.rot - self.text.trans.rot
-        self.text_shape.transform(kdb.Trans(rot=rot)) # Rotate first to 0 - trans.rot
+        #self.text_shape.transform(kdb.Trans(rot)) # Rotate first to 0 - trans.rot
+        self.text_shape.transform(kdb.Trans(rot, False, 0, 0)) # Rotate first to 0 - trans.rot
         self.text = self.text_shape.text
         text_point = self.text.position()
         displ = box_center - text_point
@@ -134,11 +132,11 @@ class PlacedPin(LayPin): # Shape-based, to be able to move
         self.text = self.text_shape.text
 
     def _transform_box(self, trans: kdb.Trans):
-        self.box_shape.transform(kdb.Trans(u=trans.disp))
+        self.box_shape.transform(kdb.Trans(trans.disp))
         self.box = self.box_shape.box
 
     def _transform_text(self, trans: kdb.Trans):
-        self.text_shape.transform(kdb.Trans(u=trans.disp)) # Then other
+        self.text_shape.transform(kdb.Trans(trans.disp)) # Then other
         self.text = self.text_shape.text
         
     def copy(self):
@@ -166,8 +164,8 @@ class LayNet():
 
 class CustomInstance():
     def __init__(self, name:str, 
-                 ref_cell: CustomLayoutCell,
-                 parent: CustomLayoutCell,
+                 ref_cell: "CustomLayoutCell",
+                 parent: "CustomLayoutCell",
                  kdb_inst:kdb.Instance) -> None:
         self.ref_cell = ref_cell
         self.parent = parent
@@ -179,19 +177,20 @@ class CustomInstance():
         self.ref_pins = ref_cell.pins
         
         self.terminals = self.get_terminals(ref_cell.pins)
-        self.nets:dict[str, LayNet] = {}
+        self.nets:Dict[str, LayNet] = {}
         self.is_pinned = False
         self.label:kdb.Shape = None
 
     def add_label(self):
-        if config.INSTANCE_LABLE_LAYER is None:
+        if config.INSTANCE_LABEL_LAYER is None:
             return None
         if self.label:
             self.label.delete()
         # Adding top-level label
         lable_name = f"{self.name}"
         lbl_text = kdb.Text(lable_name, self._center())
-        lbl_shapes = self.parent.kdb_cell.shapes(config.INSTANCE_LABLE_LAYER)
+        layer_indx = self.kdb_inst.layout().layer(config.INSTANCE_LABEL_LAYER)
+        lbl_shapes = self.parent.kdb_cell.shapes(layer_indx)
         self.label = lbl_shapes.insert(lbl_text)
 
     def get_terminals(self, pins:Dict[str,LayPin]) -> Dict[str,LayPin]:
@@ -205,7 +204,7 @@ class CustomInstance():
     def _center(self) -> kdb.Trans:
         boundary = self.kdb_inst.bbox()
         center = boundary.center()
-        return kdb.Trans(x=center.x, y=center.y)
+        return kdb.Trans(center.x, center.y)
 
     def connect(self, terminal_name:str, net:LayNet):
         terminal = self.terminals[terminal_name]
@@ -255,14 +254,14 @@ class KDBCell():
         self.name = kdb_cell.name
         self.kdb_layout = kdb_cell.layout()
         self.kdb_cell = kdb_cell
-        self.nets: dict[str, LayNet] = {} # store new internal nets
+        self.nets: Dict[str, LayNet] = {} # store new internal nets
         self.is_empty = self.kdb_cell.is_ghost_cell()
         self.pins:Dict[str, LayPin] = self._get_pins()
         self.cells:Dict[str,KDBCell] = self._map_cells()
         self.instances:Dict[str,CustomInstance] = self._map_instances()
     
-    def _map_cells(self) -> dict[str,KDBCell]:
-        res:dict[str,KDBCell] = dict()
+    def _map_cells(self) -> Dict[str,"KDBCell"]:
+        res:Dict[str,KDBCell] = dict()
         for cl_ind in self.kdb_cell.each_child_cell():
             child_cell = self.kdb_layout.cell(cl_ind)
             cell_name = child_cell.name
@@ -275,7 +274,7 @@ class KDBCell():
             res[cell_name] = loaded_cell
         return res
     
-    def _map_instances(self) -> dict[str, CustomInstance]:
+    def _map_instances(self) -> Dict[str, CustomInstance]:
         res = dict()
         for inst in self.kdb_cell.each_inst():
             cell_reference:kdb.Cell = inst.cell
@@ -349,7 +348,7 @@ class CustomLayoutCell(KDBCell):
         layout.create_cell(name)
         super().__init__(layout.top_cell())
     
-    def _add_cell(self, cell:CustomLayoutCell):
+    def _add_cell(self, cell:"CustomLayoutCell"):
         """ 
         Adding a cell into the current cell tree
         """
@@ -365,7 +364,7 @@ class CustomLayoutCell(KDBCell):
         self.cells[cell_name] = custom_cell
         return custom_cell
     
-    def insert(self, inst_name:str, cell:CustomLayoutCell, 
+    def insert(self, inst_name:str, cell:"CustomLayoutCell", 
                trans:kdb.Trans = R0) -> CustomInstance:
         """
         Insert an instance of a cell with inst_name (name) and trans (transformation)
@@ -378,13 +377,14 @@ class CustomLayoutCell(KDBCell):
         self.instances[inst_name] = custom_inst
         return custom_inst
 
-    def add_pin(self, net:LayNet):
+    def add_pin(self, net:LayNet, pin_name:str):
         inst_pin = net.ref_pin
-        pin_name = net.name
         new_pin = inst_pin.copy()
         new_pin.text.string = pin_name
-        box_shapes = self.kdb_cell.shapes(new_pin.box_layer)
-        lbl_shapes = self.kdb_cell.shapes(new_pin.label_layer)
+        layer_indx = self.kdb_layout.layer(new_pin.box_layer)
+        box_shapes = self.kdb_cell.shapes(layer_indx)
+        layer_indx = self.kdb_layout.layer(new_pin.label_layer)
+        lbl_shapes = self.kdb_cell.shapes(layer_indx)
         new_box_shape = box_shapes.insert(new_pin.box)
         new_label_shape = lbl_shapes.insert(new_pin.text)
         #lpin = PlacedPin(new_box_shape, new_label_shape)
@@ -392,7 +392,7 @@ class CustomLayoutCell(KDBCell):
         if(net.top_pin):
             raise LayoutError(f"Pin {lpin} is already regestered for net {net}")
         net.top_pin = lpin
-        self.pins[pin_name] = lpin
+        self.pins[net.name] = lpin
         return lpin
     
     def add_net(self, net_name, ref_pin: LayPin):

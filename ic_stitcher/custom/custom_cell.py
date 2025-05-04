@@ -1,82 +1,38 @@
-from __future__ import annotations
-from dataclasses import dataclass, field
+#from __future__ import annotations
 import logging
-from uuid import uuid4
+from typing import Union, Dict
+from abc import ABC
 
-from ..layout.floorplaner import * 
-from ..schematic.netlister import * 
-from ..utils.Logging import addStreamHandler
+from ic_stitcher.layout.floorplaner import * 
+from ic_stitcher.schematic.netlister import * 
+from ic_stitcher.utils.Logging import addStreamHandler
 #import klayout_plugin.ip_builder.schematic.netlister as netlist
 
-from ..layout.global_configs import GlobalLayoutConfigs as layconfig
-from ..schematic.global_configs import GlobalSchematicConfigs as schconfig
+from ic_stitcher.custom.connections import Pin, Net
 
-class Pin():
-    def __init__(self, name:str):
-        self.name = name
-        self._layout:PlacedPin|LayPin = None
-        self._netlist:NetlistPin = None
-        
-    def copy(self):
-        new_net = Pin(self.name)
-        new_net._layout = self._layout.copy()
-        new_net._netlist = self._netlist.copy()
-        return new_net
-        
-    def __str__(self):
-        return f"Pin:{self.name}"
-    
-    def __repr__(self):
-        return str(self)
-    
-class Net():
-    def __init__(self, name:str):
-        self.name = name
-        self._layout:LayNet = None
-        self._netlist:NetlistNet = None
-        self.pin:Pin = None        
-        
-    def __str__(self):
-        return f"Net:{self.name}"
-    
-    def __repr__(self):
-        return str(self)
-        
-class NetBus(list):
-    def __init__(self, name:str, stop = 0):
-        self.name = name
-        for i in range(stop):
-            self.append(Net(f"{name}[{i}]"))
-
-class PinBus(list):
-    def __init__(self, name:str, stop = 0):
-        self.name = name
-        for i in range(stop):
-            self.append(Pin(f"{name}[{i}]"))
-        
 class ICStitchError(BaseException): ...
 
 class Item():
-    def __init__(self, subcell:CustomCell | LeafCell,
-                 connections:dict[str,str|Pin|Net],
+    def __init__(self, subcell:Union["CustomCell", "LeafCell"],
+                 connections:Dict[str,Union[str,Pin,Net]],
                  trans = R0) -> None:
         if not isinstance(subcell, (CustomCell,LeafCell)):
             raise ICStitchError(f"Error: unsupported type of a subcell {subcell.__class__}, expect CustomCell or LeafCell")
-        self.cell = subcell
+        self.cell:Union[CustomCell,LeafCell] = subcell
         self.trans = trans
-        self.cell_name = subcell.name
+        self.cell_name:str = subcell.name
         self.is_instantiated = False
-        self.connections = self._map_connections(connections)
-        self.instance_name = None
-        self._lay_instance = None
-        self._sch_instance = None
+        self.connections:Dict[str,Net] = self._map_connections(connections)
+        self.instance_name:Union[str,None] = None
+        self._lay_instance:Union[CustomInstance,None] = None
+        self._sch_instance:Union[CustomNetlistInstance,None] = None
         
-    def _map_connections(self, connections:dict[str,str|Pin|Net]) -> dict[str,Net]:
+    def _map_connections(self, connections:Dict[str,Union[str,Pin,Net]]) -> Dict[str,Net]:
         res = {}
         for term, conn in connections.items():
             net = None
             if isinstance(conn, Pin):
-                net = Net(conn.name)
+                net = Net(conn.full_name)
                 net.pin = conn
             elif isinstance(conn, Net):
                 net = conn
@@ -88,29 +44,31 @@ class Item():
             pin = self.cell.pins.get(term)
             if pin is None:
                 raise ICStitchError(f"PIN '{term}' is not in the cell '{self.cell_name}'")
-            res[pin.name] = net
+            res[pin.full_name] = net
         return res
     
     def _connect_layout(self, parent_lay:CustomLayoutCell):
         lay_instance = parent_lay.insert(self.instance_name, self.cell.layout, self.trans)
         for term, cell_net in self.connections.items():
-            net_name = cell_net.name
+            net_name = cell_net._lay_name
             if cell_net._layout is None: # Create a Layout Net
                 ref_pin = lay_instance.terminals[term]
                 cell_net._layout = parent_lay.add_net(net_name, ref_pin)
                 if cell_net.pin:
-                    cell_net.pin._layout = parent_lay.add_pin(cell_net._layout)
+                    pin_name = cell_net.pin._lay_name
+                    cell_net.pin._layout = parent_lay.add_pin(cell_net._layout, pin_name)
             lay_instance.connect(term, cell_net._layout)
         self._lay_instance = lay_instance
         
     def _connect_netlist(self, parent_sch:CustomNetlistCell):
         sch_instance = parent_sch.insert(self.instance_name, self.cell.netlist)
         for term, cell_net in self.connections.items():
-            net_name = cell_net.name
+            net_name = cell_net._sch_name
             if cell_net._netlist is None: # Create a Netlist Net
                 cell_net._netlist = parent_sch.add_net(net_name)
                 if cell_net.pin:
-                    cell_net.pin._netlist = parent_sch.add_pin(cell_net._netlist)
+                    pin_name = cell_net.pin._sch_name
+                    cell_net.pin._netlist = parent_sch.add_pin(cell_net._netlist, pin_name)
             sch_instance.connect(term, cell_net._netlist)
         self._sch_instance = sch_instance
     
@@ -126,17 +84,32 @@ class _BaseCell():
         addStreamHandler(self._logger, verbose=True)
         self._logger.setLevel(logging.DEBUG)
         self._logger.debug(f"Cell: {cell_name}")
-        self.items:dict[str, Item] = {}
-        self.pins:dict[str, Pin] = {}
-        self.nets:dict[str, Net] = {}
+        self.items:Dict[str, Item] = {}
+        self.pins:Dict[str, Pin] = {}
+        self.nets:Dict[str, Net] = {}
     
-    def claim(self, laypath:str = "", schpath = ""):
-        laypath = laypath or f"./{self.name}.gds"
-        self.layout.save(laypath)
-        schpath = schpath or f"./{self.name}.cdl"
-        self.netlist.save(schpath)
+    def claim(self, outpath:str = "./", layfile:str = "", schfile = ""):
+        " Save all data in outpath with default name, or in layfile/schfile if present "
+        out_path = Path(outpath)
+        if self.layout:
+            if layfile:
+                laypath = layfile
+            else:
+                layfile_name = f"{self.name}.gds"
+                out_path.mkdir(parents=True, exist_ok=True)
+                laypath = out_path/layfile_name 
+            self.layout.save(laypath)
+        
+        if self.netlist:
+            if schfile:
+                schpath = schfile
+            else:
+                schfile_name = f"{self.name}.cdl"
+                out_path.mkdir(parents=True, exist_ok=True)
+                schpath = out_path/schfile_name 
+            self.netlist.save(schpath)
 
-class CustomCell(_BaseCell):
+class CustomCell(_BaseCell, ABC):
     def __init__(self, cell_name:str) -> None:
         super().__init__(cell_name, CustomLayoutCell(cell_name), CustomNetlistCell(cell_name))
                 
@@ -180,7 +153,7 @@ class CustomCell(_BaseCell):
         return net
     
 class LeafCell(_BaseCell):
-    _loaded:dict[str, LeafCell] = {}
+    _loaded:Dict[str, "LeafCell"] = {}
     def __new__(cls, cell_name, *arg, **kwargs):
         # Check if an object with the given name already exists
         if cell_name in cls._loaded:
@@ -205,7 +178,7 @@ class LeafCell(_BaseCell):
             if pin_name in res:
                 pin = res[pin_name]
             else:
-                pin = Pin(pin_name)
+                pin = Pin.from_text(pin_name)
                 res[pin_name] = pin
             pin._layout = lay_pin    
             
@@ -213,7 +186,7 @@ class LeafCell(_BaseCell):
             if pin_name in res:
                 pin = res[pin_name]
             else:
-                pin = Pin(pin_name)
+                pin = Pin.from_text(pin_name)
                 res[pin_name] = pin
             pin._netlist = sch_pin
             

@@ -1,25 +1,17 @@
-from __future__ import annotations
-import klayout.db as kdb
+#from __future__ import annotations
 from pathlib import Path
-from typing import Any, List, Dict, Sequence, Self
+from typing import List, Dict, Union
 import logging
 
 from ..configurations import GlobalSchematicConfigs as config
+from ..configurations import _GET_LEAFCELL, kdb
 from ..utils.Logging import addStreamHandler
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
-addStreamHandler(LOGGER)
+addStreamHandler(LOGGER, verbose=config.VERBOSE)
 
 class NetlisterError(BaseException): ...
-
-def _MAP_LEAFCELLS() -> Dict[str,Path]:
-    res_dict = {}
-    for netlist_path in config.LEAFCELL_PATH:
-        res_dict[netlist_path.stem] = netlist_path
-    return res_dict
-
-LEAFCELL_DICT = _MAP_LEAFCELLS()  
 
 class CustomNetlistReader(kdb.NetlistSpiceReaderDelegate):
 
@@ -43,7 +35,7 @@ class CustomNetlistReader(kdb.NetlistSpiceReaderDelegate):
     #     return super().element(circuit, el, name, model, value, nets, params)
 
 def _load_leafcell(cell_name:str) -> kdb.Netlist:
-    path_to_netlist = LEAFCELL_DICT[cell_name]
+    path_to_netlist = _GET_LEAFCELL(cell_name, config.LEAFCELL_PATH)
     if(not path_to_netlist.exists()):
         raise NetlisterError(f"Failed to find leafcell for '{cell_name}'")
     reader_deligate = CustomNetlistReader()
@@ -69,7 +61,7 @@ class NetlistNet():
         self.id = kdb_net.cluster_id
 
 class CustomNetlistInstance():
-    def __init__(self, kdb_subcircuit:kdb.SubCircuit, ref_cell:KDBNetlistCell, parent:KDBNetlistCell) -> None:
+    def __init__(self, kdb_subcircuit:kdb.SubCircuit, ref_cell:"KDBNetlistCell", parent:"KDBNetlistCell") -> None:
         self.name = kdb_subcircuit.name
         self.kdb_subcircuit = kdb_subcircuit
         self.ref_cell = ref_cell
@@ -93,7 +85,7 @@ class KDBNetlistCell():
         self.nets = self._find_nets()
         self.instances = self._find_instances()
         self.devices = self._find_devices()
-        self.ref_cells:dict[str, KDBNetlistCell] = {}
+        self.ref_cells:Dict[str, KDBNetlistCell] = {}
     
     def find_circuit(self, cell_name:str) -> kdb.Circuit:
         return self.kdb_netlist.circuit_by_name(cell_name)
@@ -110,9 +102,9 @@ class KDBNetlistCell():
         self.ref_cells[leafcell.name] = leafcell
         return cell
     
-    def _find_pins(self) -> tuple[Dict[str,NetlistPin], list[NetlistPin]]:
-        res:Dict[str:NetlistPin] = {}
-        ordered = []
+    def _find_pins(self):
+        res:Dict[str,NetlistPin] = {}
+        ordered:List[NetlistPin] = []
         for ind, pin in enumerate(self.kdb_circuit.each_pin()):
             custom = NetlistPin(pin)
             ordered.append(custom)
@@ -138,7 +130,7 @@ class KDBNetlistCell():
         return res    
     
     def _find_devices(self) -> Dict[str,CustomDevice]:
-        res:Dict[str:CustomDevice] = {}
+        res:Dict[str,CustomDevice] = {}
         for device in self.kdb_circuit.each_device():
             #ref_cell = self._fetch_cell(device.circuit().name)
             res[device.name] = CustomDevice(device)
@@ -151,7 +143,7 @@ class KDBNetlistCell():
         self.kdb_netlist.write(file, netlist_writer, description=description)
             
 class CustomNetlistCell(KDBNetlistCell):
-    # loaded_cell:Dict[str:kdb.Circuit] = {}
+    # loaded_cell:Dict[str,kdb.Circuit] = {}
     def __init__(self, name:str) -> None:
         # Create a new cell
         kdb_netlist = kdb.Netlist()
@@ -161,9 +153,6 @@ class CustomNetlistCell(KDBNetlistCell):
         super().__init__(kdb_netlist, top_cell)
         
     def add_net(self, net_name:str):
-        if config.SUBNET_DELIMITER:
-            if(net_name.find(config.SUBNET_DELIMITER) != -1):
-                net_name = net_name.split(config.SUBNET_DELIMITER)[0]
         if net_name in self.nets:
             return self.nets[net_name]
         kdb_net = self.kdb_circuit.create_net(net_name)
@@ -171,19 +160,19 @@ class CustomNetlistCell(KDBNetlistCell):
         self.nets[net.name] = net
         return net
         
-    def add_pin(self, net:NetlistNet):
-        pin_name = net.name
+    def add_pin(self, net:NetlistNet, pin_name:str):
         if pin_name in self.pins:
-            raise NetlisterError(f"Trying to add existing pin '{pin_name}'")
+            return self.pins[pin_name]
+            # raise NetlisterError(f"Trying to add existing pin '{pin_name}'")
         kdb_pin = self.kdb_circuit.create_pin(pin_name)
         pin = NetlistPin(kdb_pin)
         self.kdb_circuit.connect_pin(kdb_pin, net.kdb_net)
-        self.pins[pin.name] = pin
+        self.pins[pin_name] = pin
         net.pin = pin
         self.orderd_pins.append(pin)
         return pin
        
-    def add(self, cell:CustomNetlistCell|LeafNetlistCell|KDBNetlistCell) -> KDBNetlistCell:
+    def add(self, cell:Union["CustomNetlistCell","LeafNetlistCell",KDBNetlistCell]) -> KDBNetlistCell:
         cellname = cell.name
         new_cell = self.ref_cells.get(cellname)
         if(not new_cell):
@@ -193,10 +182,10 @@ class CustomNetlistCell(KDBNetlistCell):
             for ref_cell in cell.ref_cells.values():
                 self.ref_cells[ref_cell.name] = self.add(ref_cell)
         else:
-            LOGGER.debug(f"[{self.name}] inserting an existing cell '{cellname}'")
+            LOGGER.warning(f"[{self.name}] inserting an existing cell '{cellname}'")
         return new_cell
     
-    def insert(self, inst_name:str, cell:CustomNetlistCell|LeafNetlistCell) -> CustomNetlistInstance:
+    def insert(self, inst_name:str, cell:Union["CustomNetlistCell","LeafNetlistCell"]) -> CustomNetlistInstance:
         """
         Insert an instance by cell name and by pins, retriving a reference cell from loaded cells 
         or reading it from leafcells
@@ -213,15 +202,3 @@ class LeafNetlistCell(KDBNetlistCell):
         if not kdb_circuit:
             raise NetlisterError(f"Failed to find cell '{name}' in a leafcell")
         super().__init__(netlist, kdb_circuit)
-    #     self.ref_cells = self.map_cells()
-    
-    # def map_cells(self) -> Dict[str:KDBNetlistCell]:
-    #     res = {}
-    #     for indx, circuit in enumerate(self.kdb_netlist.each_circuit_top_down()):
-    #         custom_cell = KDBNetlistCell(circuit)
-    #         if(indx == 0):
-    #             #self.top_cell = custom_cell
-    #             continue
-    #         res[custom_cell.name] = custom_cell
-    #     return res    
-    

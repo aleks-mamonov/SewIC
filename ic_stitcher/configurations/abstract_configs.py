@@ -1,16 +1,15 @@
-from typing import List, Tuple
+from typing import List, Tuple, Union
 from pathlib import Path
 
-import klayout.db as kdb
-from .layout import Layer, Mapper
+from .layout_configs import Layer, Mapper
 
 class GlobalAbstractConfigs():
     # Define the list of pathes to layout leafcells, 
     # best to use Path().glob(your_pattern)
-    LEAFCELL_PATH:List[Path | str] = []
+    LEAFCELL_PATH:List[Union[Path,str]] = []
     
     # Define layers for searching pins and labels
-    PIN_LAY:List[tuple[Layer,Layer]] = []
+    PIN_LAY:List[Tuple[Layer,Layer]] = []
     
     # Define a lable layer for newly placed instances
     INSTANCE_LABLE_LAYER:Layer = None
