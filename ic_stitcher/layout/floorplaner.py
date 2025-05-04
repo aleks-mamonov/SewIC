@@ -40,8 +40,8 @@ def _load_leafcell(cell_name:str) -> kdb.Layout:
     tech = layout.technology()
     opt = tech.load_layout_options
     opt.layer_map.assign(config.INPUT_MAPPER)
-    opt.create_other_layers = False
-    layout.read(path, opt)
+    opt.create_other_layers = config.CREATE_OTHER_LAYERS
+    layout.read(str(path.resolve()), opt)
     return layout
 
 class LayPinInfo():
@@ -123,7 +123,8 @@ class PlacedPin(LayPin): # Shape-based, to be able to move
     def center_label(self):
         box_center = self.box.center()
         rot = R0.rot - self.text.trans.rot
-        self.text_shape.transform(kdb.Trans(rot=rot)) # Rotate first to 0 - trans.rot
+        #self.text_shape.transform(kdb.Trans(rot)) # Rotate first to 0 - trans.rot
+        self.text_shape.transform(kdb.Trans(rot, False, 0, 0)) # Rotate first to 0 - trans.rot
         self.text = self.text_shape.text
         text_point = self.text.position()
         displ = box_center - text_point
@@ -131,11 +132,11 @@ class PlacedPin(LayPin): # Shape-based, to be able to move
         self.text = self.text_shape.text
 
     def _transform_box(self, trans: kdb.Trans):
-        self.box_shape.transform(kdb.Trans(u=trans.disp))
+        self.box_shape.transform(kdb.Trans(trans.disp))
         self.box = self.box_shape.box
 
     def _transform_text(self, trans: kdb.Trans):
-        self.text_shape.transform(kdb.Trans(u=trans.disp)) # Then other
+        self.text_shape.transform(kdb.Trans(trans.disp)) # Then other
         self.text = self.text_shape.text
         
     def copy(self):
@@ -188,7 +189,8 @@ class CustomInstance():
         # Adding top-level label
         lable_name = f"{self.name}"
         lbl_text = kdb.Text(lable_name, self._center())
-        lbl_shapes = self.parent.kdb_cell.shapes(config.INSTANCE_LABEL_LAYER)
+        layer_indx = self.kdb_inst.layout().layer(config.INSTANCE_LABEL_LAYER)
+        lbl_shapes = self.parent.kdb_cell.shapes(layer_indx)
         self.label = lbl_shapes.insert(lbl_text)
 
     def get_terminals(self, pins:Dict[str,LayPin]) -> Dict[str,LayPin]:
@@ -202,7 +204,7 @@ class CustomInstance():
     def _center(self) -> kdb.Trans:
         boundary = self.kdb_inst.bbox()
         center = boundary.center()
-        return kdb.Trans(x=center.x, y=center.y)
+        return kdb.Trans(center.x, center.y)
 
     def connect(self, terminal_name:str, net:LayNet):
         terminal = self.terminals[terminal_name]
@@ -379,8 +381,10 @@ class CustomLayoutCell(KDBCell):
         inst_pin = net.ref_pin
         new_pin = inst_pin.copy()
         new_pin.text.string = pin_name
-        box_shapes = self.kdb_cell.shapes(new_pin.box_layer)
-        lbl_shapes = self.kdb_cell.shapes(new_pin.label_layer)
+        layer_indx = self.kdb_layout.layer(new_pin.box_layer)
+        box_shapes = self.kdb_cell.shapes(layer_indx)
+        layer_indx = self.kdb_layout.layer(new_pin.label_layer)
+        lbl_shapes = self.kdb_cell.shapes(layer_indx)
         new_box_shape = box_shapes.insert(new_pin.box)
         new_label_shape = lbl_shapes.insert(new_pin.text)
         #lpin = PlacedPin(new_box_shape, new_label_shape)

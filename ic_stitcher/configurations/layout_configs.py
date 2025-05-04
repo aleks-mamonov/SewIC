@@ -10,10 +10,10 @@ class GlobalLayoutConfigs():
     LEAFCELL_PATH:List[Union[Path, str]] = []
     
     # Define layers for searching pins and labels
-    PIN_LAY:List[tuple[Layer,Layer]] = []
+    PIN_LAY:List[Tuple[Layer,Layer]] = []
     
     # Define a label layer for newly placed instances
-    INSTANCE_LABEL_LAYER:Layer = None
+    INSTANCE_LABEL_LAYER:Layer = Layer(99,99)
     
     # Print more information on Layout building
     VERBOSE:bool = glconf.VERBOSE
