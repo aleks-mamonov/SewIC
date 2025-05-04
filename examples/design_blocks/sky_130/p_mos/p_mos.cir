@@ -1,0 +1,3 @@
+.subckt p_mos S D
+* Subcircuit Body
+.ends p_mos

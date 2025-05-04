@@ -1,0 +1,4 @@
+.subckt n_mos S D
+* Subcircuit Body
+MNMOS S D G B ne L=110 W=300
+.ends n_mos
