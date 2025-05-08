@@ -109,7 +109,9 @@ class _BaseCell():
                 schpath = out_path/schfile_name 
             self.netlist.save(schpath)
 
+PCELL_DECLARATION = []
 class CustomCell(_BaseCell, ABC):
+    
     def __init__(self, cell_name:str) -> None:
         super().__init__(cell_name, CustomLayoutCell(cell_name), CustomNetlistCell(cell_name))
                 
@@ -128,18 +130,35 @@ class CustomCell(_BaseCell, ABC):
                 item._connect_layout(self.layout)
             except LayoutError as exc:
                 raise ICStitchError(f"Failed to connect Layout.\n{exc}")
+        else:
+            self._logger.debug(f"Layout for {instance_name} is skiped")
         if self.netlist is not None:
             try:
                 self._logger.debug(f"Connecting Netlist")
                 item._connect_netlist(self.netlist)
             except NetlisterError as exc:
                 raise ICStitchError(f"Failed to connect Netlist.\n{exc}")
+        else:
+            self._logger.debug(f"Netlist for {instance_name} is skiped")
         item.is_instantiated = True
+        self._update_nets(item)
         self.items[instance_name] = item
     
     def __getitem__(self, instance_name:str):
         return self.items[instance_name]
-
+    
+    def _update_nets(self, item:Item):
+        for net in item.connections.values():
+            net_name = net.full_name
+            if net_name in self.nets:
+                raise ICStitchError(f"Net '{net_name}' is already existed in the cell")
+            self.nets[net_name] = net
+            if net.pin is not None:
+                pin_name = net.pin.full_name
+                if pin_name in self.pins:
+                    raise ICStitchError(f"Pin '{pin_name}' is already existed in the cell")
+                self.pins[pin_name] = net.pin
+            
     def find_pin(self, name:str):
         if(not isinstance(name, str)):
             raise ICStitchError("Incorrect type of the name, must be 'str'")
@@ -151,6 +170,11 @@ class CustomCell(_BaseCell, ABC):
             raise ICStitchError("Incorrect type of the name, must be 'str'")
         net = Net(name, pin=True)
         return net
+    
+    def __subclasses__(self, do_pcell = False):
+        if do_pcell:
+            PCELL_DECLARATION.append(self)
+        return super().__subclasses__()
     
 class LeafCell(_BaseCell):
     _loaded:Dict[str, "LeafCell"] = {}

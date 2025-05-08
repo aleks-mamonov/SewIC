@@ -37,8 +37,7 @@ def _load_leafcell(cell_name:str) -> kdb.Layout:
         raise LayoutError(f"'{cell_name}' not found in your 'LEAFCELL_PATH'")
     layout = kdb.Layout(False)
     layout.technology_name = globconf.TECH_NAME
-    tech = layout.technology()
-    opt = tech.load_layout_options
+    opt = kdb.LoadLayoutOptions()
     opt.layer_map.assign(config.INPUT_MAPPER)
     opt.create_other_layers = config.CREATE_OTHER_LAYERS
     layout.read(str(path.resolve()), opt)
