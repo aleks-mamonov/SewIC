@@ -1,2 +1,2 @@
-from .subcells.build_gds import main
+from .subcells.simple_row import main
 main()

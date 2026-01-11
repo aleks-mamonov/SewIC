@@ -7,14 +7,14 @@ use 'sys.path.append(<path_to_python_lib_with_stitcher>)' to achieve this
 !!! Not usable outside the Klayout !!!
 """
 # import flayout # A lot of function are taken from it, quite helpfull
-import pya
 from inspect import Parameter, signature, Signature
 from typing import Callable, Optional, Type
 
+from ic_stitcher.configurations import kdb
 from ic_stitcher import CustomCell
 
 # PCell class that creates the PCell from a class defenition
-class PCellFactory(pya.PCellDeclarationHelper):
+class PCellFactory(kdb.PCellDeclarationHelper):
     def __init__(self, subclass:Type[CustomCell]) -> None:
         """Create a PCell from a subclass of a CustomCell class."""
         super().__init__()
@@ -41,7 +41,7 @@ class PCellFactory(pya.PCellDeclarationHelper):
         params = dict(zip(self._param_keys, self._param_values))
         subclass_obj = self.subclass(**params)
         # Add the cell to the layout
-        internal_cell:pya.Cell = self.cell # Typing hook
+        internal_cell:kdb.Cell = self.cell # Typing hook
         internal_cell.copy_tree(subclass_obj.layout.kdb_cell)
         internal_cell.name = params[subclass_obj.name]
 
@@ -88,7 +88,7 @@ def all_subclasses(cls):
     return set(cls.__subclasses__()).union(
         [s for c in cls.__subclasses__() for s in all_subclasses(c)])
 
-MYLIB = pya.Library()
+MYLIB = kdb.Library()
 def register_pcell_lib(libname:str, description:str = "IC-stitcher based library", subclasses = []):
     MYLIB.description = description
     if not subclasses:
@@ -100,39 +100,39 @@ def register_pcell_lib(libname:str, description:str = "IC-stitcher based library
 # Klayout PCell type -> Python type Mapper
 def _klayout_type(param: Parameter):
     type_map = {
-        pya.PCellDeclarationHelper.TypeInt: pya.PCellDeclarationHelper.TypeInt,
-        "TypeInt": pya.PCellDeclarationHelper.TypeInt,
-        "int": pya.PCellDeclarationHelper.TypeInt,
-        int: pya.PCellDeclarationHelper.TypeInt,
-        Optional[int]: pya.PCellDeclarationHelper.TypeInt,
-        pya.PCellDeclarationHelper.TypeDouble: pya.PCellDeclarationHelper.TypeDouble,
-        "TypeDouble": pya.PCellDeclarationHelper.TypeDouble,
-        "float": pya.PCellDeclarationHelper.TypeDouble,
-        float: pya.PCellDeclarationHelper.TypeDouble,
-        Optional[float]: pya.PCellDeclarationHelper.TypeDouble,
-        pya.PCellDeclarationHelper.TypeString: pya.PCellDeclarationHelper.TypeString,
-        "TypeString": pya.PCellDeclarationHelper.TypeString,
-        "str": pya.PCellDeclarationHelper.TypeString,
-        str: pya.PCellDeclarationHelper.TypeString,
-        Optional[str]: pya.PCellDeclarationHelper.TypeString,
-        pya.PCellDeclarationHelper.TypeBoolean: pya.PCellDeclarationHelper.TypeBoolean,
-        "TypeBoolean": pya.PCellDeclarationHelper.TypeBoolean,
-        "bool": pya.PCellDeclarationHelper.TypeBoolean,
-        bool: pya.PCellDeclarationHelper.TypeBoolean,
-        Optional[bool]: pya.PCellDeclarationHelper.TypeBoolean,
-        pya.PCellDeclarationHelper.TypeLayer: pya.PCellDeclarationHelper.TypeLayer,
-        "TypeLayer": pya.PCellDeclarationHelper.TypeLayer,
-        "LayerInfo": pya.PCellDeclarationHelper.TypeLayer,
-        pya.LayerInfo: pya.PCellDeclarationHelper.TypeLayer,
-        pya.PCellDeclarationHelper.TypeShape: pya.PCellDeclarationHelper.TypeShape,
-        "TypeShape": pya.PCellDeclarationHelper.TypeShape,
-        "Shape": pya.PCellDeclarationHelper.TypeShape,
-        pya.Shape: pya.PCellDeclarationHelper.TypeShape,
-        pya.PCellDeclarationHelper.TypeList: pya.PCellDeclarationHelper.TypeList,
-        "TypeList": pya.PCellDeclarationHelper.TypeList,
-        "list": pya.PCellDeclarationHelper.TypeList,
-        list: pya.PCellDeclarationHelper.TypeList,
-        Optional[list]: pya.PCellDeclarationHelper.TypeList,
+        kdb.PCellDeclarationHelper.TypeInt: kdb.PCellDeclarationHelper.TypeInt,
+        "TypeInt": kdb.PCellDeclarationHelper.TypeInt,
+        "int": kdb.PCellDeclarationHelper.TypeInt,
+        int: kdb.PCellDeclarationHelper.TypeInt,
+        Optional[int]: kdb.PCellDeclarationHelper.TypeInt,
+        kdb.PCellDeclarationHelper.TypeDouble: kdb.PCellDeclarationHelper.TypeDouble,
+        "TypeDouble": kdb.PCellDeclarationHelper.TypeDouble,
+        "float": kdb.PCellDeclarationHelper.TypeDouble,
+        float: kdb.PCellDeclarationHelper.TypeDouble,
+        Optional[float]: kdb.PCellDeclarationHelper.TypeDouble,
+        kdb.PCellDeclarationHelper.TypeString: kdb.PCellDeclarationHelper.TypeString,
+        "TypeString": kdb.PCellDeclarationHelper.TypeString,
+        "str": kdb.PCellDeclarationHelper.TypeString,
+        str: kdb.PCellDeclarationHelper.TypeString,
+        Optional[str]: kdb.PCellDeclarationHelper.TypeString,
+        kdb.PCellDeclarationHelper.TypeBoolean: kdb.PCellDeclarationHelper.TypeBoolean,
+        "TypeBoolean": kdb.PCellDeclarationHelper.TypeBoolean,
+        "bool": kdb.PCellDeclarationHelper.TypeBoolean,
+        bool: kdb.PCellDeclarationHelper.TypeBoolean,
+        Optional[bool]: kdb.PCellDeclarationHelper.TypeBoolean,
+        kdb.PCellDeclarationHelper.TypeLayer: kdb.PCellDeclarationHelper.TypeLayer,
+        "TypeLayer": kdb.PCellDeclarationHelper.TypeLayer,
+        "LayerInfo": kdb.PCellDeclarationHelper.TypeLayer,
+        kdb.LayerInfo: kdb.PCellDeclarationHelper.TypeLayer,
+        kdb.PCellDeclarationHelper.TypeShape: kdb.PCellDeclarationHelper.TypeShape,
+        "TypeShape": kdb.PCellDeclarationHelper.TypeShape,
+        "Shape": kdb.PCellDeclarationHelper.TypeShape,
+        kdb.Shape: kdb.PCellDeclarationHelper.TypeShape,
+        kdb.PCellDeclarationHelper.TypeList: kdb.PCellDeclarationHelper.TypeList,
+        "TypeList": kdb.PCellDeclarationHelper.TypeList,
+        "list": kdb.PCellDeclarationHelper.TypeList,
+        list: kdb.PCellDeclarationHelper.TypeList,
+        Optional[list]: kdb.PCellDeclarationHelper.TypeList,
     }
     try:
         annotation = param.annotation
@@ -149,31 +149,31 @@ def _klayout_type(param: Parameter):
 # Python type -> Klayout PCell type
 def _python_type(param: Parameter):
     type_map = {
-        pya.PCellDeclarationHelper.TypeInt: int,
+        kdb.PCellDeclarationHelper.TypeInt: int,
         "TypeInt": int,
         "int": int,
         int: int,
-        pya.PCellDeclarationHelper.TypeDouble: float,
+        kdb.PCellDeclarationHelper.TypeDouble: float,
         "TypeDouble": float,
         "float": float,
         float: float,
-        pya.PCellDeclarationHelper.TypeString: str,
+        kdb.PCellDeclarationHelper.TypeString: str,
         "TypeString": str,
         "str": str,
         str: str,
-        pya.PCellDeclarationHelper.TypeBoolean: bool,
+        kdb.PCellDeclarationHelper.TypeBoolean: bool,
         "TypeBoolean": bool,
         "bool": bool,
         bool: bool,
-        pya.PCellDeclarationHelper.TypeLayer: pya.LayerInfo,
-        "TypeLayer": pya.LayerInfo,
-        "LayerInfo": pya.LayerInfo,
-        pya.LayerInfo: pya.LayerInfo,
-        pya.PCellDeclarationHelper.TypeShape: pya.Shape,
-        "TypeShape": pya.Shape,
-        "Shape": pya.Shape,
-        pya.Shape: pya.Shape,
-        pya.PCellDeclarationHelper.TypeList: list,
+        kdb.PCellDeclarationHelper.TypeLayer: kdb.LayerInfo,
+        "TypeLayer": kdb.LayerInfo,
+        "LayerInfo": kdb.LayerInfo,
+        kdb.LayerInfo: kdb.LayerInfo,
+        kdb.PCellDeclarationHelper.TypeShape: kdb.Shape,
+        "TypeShape": kdb.Shape,
+        "Shape": kdb.Shape,
+        kdb.Shape: kdb.Shape,
+        kdb.PCellDeclarationHelper.TypeList: list,
         "TypeList": list,
         "list": list,
         list: list,
